@@ -596,7 +596,7 @@ class _SchedulePageState extends State<SchedulePage> {
           top: topOffset,
           left: leftPos,
           width: width,
-          height: itemHeight - 1,
+          height: itemHeight,
           child: GestureDetector(
             onTap: () => _showClassDetails(item),
             child: Opacity(
@@ -750,7 +750,10 @@ class _SchedulePageState extends State<SchedulePage> {
       }
     }
 
-    if (isToday) stackChildren.add(_buildCurrentTimeLine());
+    if (isToday) {
+      final timeLine = _buildCurrentTimeLine();
+      if (timeLine != null) stackChildren.add(timeLine);
+    }
 
     return SingleChildScrollView(
       controller: isToday ? _scrollController : null,
@@ -763,9 +766,9 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
-  Widget _buildCurrentTimeLine() {
+  Widget? _buildCurrentTimeLine() {
     final now = DateTime.now();
-    if (now.hour < startHour || now.hour > endHour) return const SizedBox();
+    if (now.hour < startHour || now.hour > endHour) return null;
     double minutesFromTop = (now.hour - startHour) * 60.0 + now.minute;
     double topOffset = (minutesFromTop / 60.0) * hourHeight;
     return Positioned(top: topOffset, left: 0, right: 0, child: Row(children: [Container(width: 50, alignment: Alignment.centerRight, child: Text(DateFormat('HH:mm').format(now), style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12))), const SizedBox(width: 5), const Icon(Icons.circle, color: Colors.redAccent, size: 8), Expanded(child: Container(height: 2, color: Colors.redAccent))]));
