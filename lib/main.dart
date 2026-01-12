@@ -621,9 +621,12 @@ class _SchedulePageState extends State<SchedulePage> {
                     // Sprawdzamy czy jest notatka, żeby dostosować paddingi
                     bool hasNote = item.note != null && item.note!.isNotEmpty && !isShort;
 
+                    // Mniejsze paddingi dla krótkich zajęć, aby uniknąć overflow
+                    double verticalPadding = isTiny ? 1 : ((isShort || hasNote) ? 2 : 5);
+
                     return Padding(
                       // Jeśli jest notatka, zmniejszamy padding góra/dół do 2px, żeby zyskać miejsce
-                      padding: EdgeInsets.fromLTRB(isNarrow ? 4 : 8, (isShort || hasNote) ? 2 : 5, isNarrow ? 4 : 8, (isShort || hasNote) ? 2 : 5),
+                      padding: EdgeInsets.fromLTRB(isNarrow ? 4 : 8, verticalPadding, isNarrow ? 4 : 8, verticalPadding),
                       child: Row(
                         children: [
                           // KOLUMNA 1: CZAS
@@ -634,8 +637,8 @@ class _SchedulePageState extends State<SchedulePage> {
                             : Column(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  FittedBox(fit: BoxFit.scaleDown, child: Text(startTime, style: TextStyle(fontSize: isShort ? 10 : 11, fontWeight: FontWeight.w600, color: Colors.white))),
-                                  FittedBox(fit: BoxFit.scaleDown, child: Text(endTime, style: TextStyle(fontSize: isShort ? 9 : 10, color: Colors.white54))),
+                                  FittedBox(fit: BoxFit.scaleDown, child: Text(startTime, style: TextStyle(fontSize: isShort ? 9 : 11, fontWeight: FontWeight.w600, color: Colors.white))),
+                                  FittedBox(fit: BoxFit.scaleDown, child: Text(endTime, style: TextStyle(fontSize: isShort ? 8 : 10, color: Colors.white54))),
                                 ],
                               ),
                           ),
