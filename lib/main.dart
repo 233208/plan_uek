@@ -11,20 +11,9 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// --- 0. NAPRAWA SSL ---
-class MyHttpOverrides extends HttpOverrides {
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true;
-  }
-}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('pl_PL', null);
-  HttpOverrides.global = MyHttpOverrides();
   runApp(const UekScheduleApp());
 }
 
@@ -306,15 +295,14 @@ class _SchedulePageState extends State<SchedulePage> {
   final int _selectedPeriod = 2;
   
   // Date range constants
-  final DateTime kFirstDay = DateTime.utc(2023, 10, 1);
-  final DateTime kLastDay = DateTime.utc(2026, 12, 31);
+  late final DateTime kFirstDay;
+  late final DateTime kLastDay;
 
   bool _showCalendar = false;
   bool _isSimpleView = false;
   PageController? _pageController;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  Timer? _timer;
   late String _currentGroupId;
   
   final ScrollController _scrollController = ScrollController();
@@ -327,13 +315,13 @@ class _SchedulePageState extends State<SchedulePage> {
     super.initState();
     _currentGroupId = widget.groupId;
     _selectedDay = _focusedDay;
+
+    final now = DateTime.now();
+    kFirstDay = DateTime.utc(now.year - 1, 10, 1);
+    kLastDay = DateTime.utc(now.year + 2, 9, 30);
+
     _loadViewPreference();
     _refresh();
-    
-    // Timer 5 sekund dla dokładności czasu
-    _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (mounted) setState(() {});
-    });
 
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _scrollToCurrentTime();
@@ -506,7 +494,6 @@ class _SchedulePageState extends State<SchedulePage> {
 
   @override
   void dispose() {
-    _timer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -794,8 +781,13 @@ class _SchedulePageState extends State<SchedulePage> {
     }
 
     if (isToday) {
-      final timeLine = _buildCurrentTimeLine();
-      if (timeLine != null) stackChildren.add(timeLine);
+      stackChildren.add(Positioned.fill(
+        child: CurrentTimeLineWidget(
+          startHour: startHour,
+          endHour: endHour,
+          hourHeight: hourHeight,
+        ),
+      ));
     }
 
     return SingleChildScrollView(
@@ -931,14 +923,6 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
-  Widget? _buildCurrentTimeLine() {
-    final now = DateTime.now();
-    if (now.hour < startHour || now.hour > endHour) return null;
-    double minutesFromTop = (now.hour - startHour) * 60.0 + now.minute;
-    double topOffset = (minutesFromTop / 60.0) * hourHeight;
-    return Positioned(top: topOffset, left: 0, right: 0, child: Row(children: [Container(width: 50, alignment: Alignment.centerRight, child: Text(DateFormat('HH:mm').format(now), style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12))), const SizedBox(width: 5), const Icon(Icons.circle, color: Colors.redAccent, size: 8), Expanded(child: Container(height: 2, color: Colors.redAccent))]));
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1024,5 +1008,75 @@ class _SchedulePageState extends State<SchedulePage> {
     if (type.contains('ćwiczenia')) return Colors.orangeAccent;
     if (type.contains('lab')) return Colors.blueAccent;
     return Colors.grey;
+  }
+}
+
+class CurrentTimeLineWidget extends StatefulWidget {
+  final int startHour;
+  final int endHour;
+  final double hourHeight;
+
+  const CurrentTimeLineWidget({
+    super.key,
+    required this.startHour,
+    required this.endHour,
+    required this.hourHeight,
+  });
+
+  @override
+  State<CurrentTimeLineWidget> createState() => _CurrentTimeLineWidgetState();
+}
+
+class _CurrentTimeLineWidgetState extends State<CurrentTimeLineWidget> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    if (now.hour < widget.startHour || now.hour > widget.endHour) {
+      return const SizedBox.shrink();
+    }
+
+    double minutesFromTop = (now.hour - widget.startHour) * 60.0 + now.minute;
+    double topOffset = (minutesFromTop / 60.0) * widget.hourHeight;
+
+    return Stack(
+      children: [
+        Positioned(
+          top: topOffset,
+          left: 0,
+          right: 0,
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  DateFormat('HH:mm').format(now),
+                  style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+              const SizedBox(width: 5),
+              const Icon(Icons.circle, color: Colors.redAccent, size: 8),
+              Expanded(child: Container(height: 2, color: Colors.redAccent)),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
