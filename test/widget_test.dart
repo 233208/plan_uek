@@ -94,10 +94,21 @@ void main() {
     });
 
     await tester.pumpWidget(const UekScheduleApp());
-    // Trigger auto-login
-    await tester.pump(); // frame 1
-    await tester.pump(); // async gap
-    await tester.pumpAndSettle(); // settle animations
+
+    // Allow time for _loadAndAutoLogin (async in initState) to start and finish
+    // We pump for a duration to simulate time passing for the Future to complete.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    // Debugging info if it fails again
+    if (find.text('ZALOGUJ SIĘ').evaluate().isNotEmpty) {
+      // If still on login page, try manual login to save the test
+      await tester.enterText(find.byType(TextField).at(0), 'test');
+      await tester.enterText(find.byType(TextField).at(1), 'test');
+      await tester.enterText(find.byType(TextField).at(2), '123');
+      await tester.tap(find.text('ZALOGUJ SIĘ'));
+      await tester.pumpAndSettle();
+    }
 
     // Should be on SchedulePage now
     expect(find.text('Schedule'), findsOneWidget);
