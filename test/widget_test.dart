@@ -35,11 +35,28 @@ class MockHttpClientRequest extends Fake implements HttpClientRequest {
 class MockHttpHeaders extends Fake implements HttpHeaders {
   @override
   void set(String name, Object value, {bool preserveHeaderCase = false}) {}
+
+  @override
+  void forEach(void Function(String name, List<String> values) action) {
+    // No headers
+  }
+
+  @override
+  String? value(String name) => null;
 }
 
 class MockHttpClientResponse extends Fake implements HttpClientResponse {
   @override
   int get statusCode => 200;
+
+  @override
+  String get reasonPhrase => 'OK';
+
+  @override
+  int get contentLength => -1;
+
+  @override
+  HttpClientResponseCompressionState get compressionState => HttpClientResponseCompressionState.notCompressed;
 
   @override
   Stream<S> transform<S>(StreamTransformer<List<int>, S> streamTransformer) {
