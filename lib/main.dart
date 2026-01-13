@@ -817,58 +817,93 @@ class _SchedulePageState extends State<SchedulePage> {
       itemCount: classes.length,
       itemBuilder: (context, index) {
         final item = classes[index];
-        final typeColor = item.isRescheduled ? Colors.redAccent : _getColorForType(item.type);
+        bool isRemote = item.room.toLowerCase().contains('zdalne') || item.type.toLowerCase().contains('zdalne');
+        Color typeColor = item.isRescheduled ? Colors.redAccent : (isRemote ? Colors.blueAccent : _getColorForType(item.type));
+        Color bgColor = item.isRescheduled ? const Color(0xFF3E2723) : (isRemote ? const Color(0xFF1A237E).withOpacity(0.3) : const Color(0xFF2C2C2C));
 
         return Container(
-          margin: const EdgeInsets.only(bottom: 20),
+          margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: item.isRescheduled ? const Color(0xFF3E2723) : const Color(0xFF2C2C2C), // Darker red bg if rescheduled
-            borderRadius: BorderRadius.circular(16),
-            border: Border(left: BorderSide(color: typeColor, width: 8)),
-            boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6, offset: const Offset(0, 4))],
+            color: bgColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border(left: BorderSide(color: typeColor, width: 6)),
+            boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4, offset: const Offset(0, 2))],
           ),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
               onTap: () => _showClassDetails(item),
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(16),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    // Czas
                     Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                         Text(item.time.split('-')[0].trim(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.white)),
-                         const SizedBox(height: 6),
-                         Text(item.time.split('-')[1].trim(), style: const TextStyle(color: Colors.white54, fontSize: 18)),
+                         Text(item.time.split('-')[0].trim(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                         const SizedBox(height: 4),
+                         Text(item.time.split('-')[1].trim(), style: const TextStyle(color: Colors.white54, fontSize: 14)),
                       ],
                     ),
-                    const SizedBox(width: 24),
-                    Container(width: 2, height: 60, color: Colors.white10),
-                    const SizedBox(width: 24),
+                    const SizedBox(width: 16),
+                    Container(width: 1, height: 60, color: Colors.white10),
+                    const SizedBox(width: 16),
+                    // Reszta info
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(item.subject, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white)),
-                          if (item.isRescheduled && item.note != null) ...[
-                             const SizedBox(height: 8),
+                          Text(item.subject, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+
+                          // Notatka (dla wszystkich)
+                          if (item.note != null && item.note!.isNotEmpty) ...[
+                             const SizedBox(height: 4),
                              Text(
-                               "PRZENIESIONE: ${item.note}",
-                               style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16)
+                               item.isRescheduled ? "PRZENIESIONE: ${item.note}" : item.note!,
+                               style: TextStyle(color: item.isRescheduled ? Colors.redAccent : Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 13)
                              ),
                           ],
-                          const SizedBox(height: 8),
-                          Row(children: [
-                            Icon(Icons.location_on, size: 18, color: typeColor),
-                            const SizedBox(width: 6),
-                            Flexible(child: Text(item.room, style: const TextStyle(color: Colors.white70, fontSize: 16), overflow: TextOverflow.ellipsis)),
-                            const SizedBox(width: 14),
-                            Icon(Icons.class_, size: 18, color: Colors.white38),
-                            const SizedBox(width: 6),
-                            Flexible(child: Text(item.type, style: const TextStyle(color: Colors.white38, fontSize: 16), overflow: TextOverflow.ellipsis)),
-                          ]),
+
+                          const SizedBox(height: 6),
+
+                          // Prowadzący
+                          Row(
+                            children: [
+                              const Icon(Icons.person, size: 14, color: Colors.white38),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text(item.teacher, style: const TextStyle(color: Colors.white60, fontSize: 13), overflow: TextOverflow.visible)),
+                            ],
+                          ),
+
+                          const SizedBox(height: 6),
+
+                          // Sala i Typ
+                          Row(
+                            children: [
+                              Icon(Icons.location_on, size: 14, color: typeColor),
+                              const SizedBox(width: 6),
+                              Flexible(child: Text(item.room, style: const TextStyle(color: Colors.white70, fontSize: 13), overflow: TextOverflow.visible)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(Icons.class_, size: 14, color: Colors.white38),
+                              const SizedBox(width: 6),
+                              Flexible(child: Text(item.type, style: const TextStyle(color: Colors.white38, fontSize: 13), overflow: TextOverflow.visible)),
+                              if (isRemote) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(4)),
+                                  child: const Text("ZDALNE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                                )
+                              ]
+                            ],
+                          ),
                         ],
                       ),
                     ),
