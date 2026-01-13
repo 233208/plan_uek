@@ -210,10 +210,10 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    _loadCredentials();
+    _loadAndAutoLogin();
   }
 
-  Future<void> _loadCredentials() async {
+  Future<void> _loadAndAutoLogin() async {
     String? user = await _storage.read(key: 'login');
     String? pass = await _storage.read(key: 'pass');
     String? group = await _storage.read(key: 'group_id');
@@ -221,6 +221,10 @@ class _LoginPageState extends State<LoginPage> {
     if (user != null) _userController.text = user;
     if (pass != null) _passController.text = pass;
     _groupController.text = group ?? '237961'; 
+
+    if (user != null && pass != null && group != null && user.isNotEmpty && pass.isNotEmpty) {
+      _login();
+    }
   }
 
   void _login() async {
@@ -298,6 +302,7 @@ class _SchedulePageState extends State<SchedulePage> {
   final int _selectedPeriod = 2;
   
   bool _showCalendar = false;
+  bool _isSimpleView = false;
   PageController? _pageController;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
@@ -314,6 +319,7 @@ class _SchedulePageState extends State<SchedulePage> {
     super.initState();
     _currentGroupId = widget.groupId;
     _selectedDay = _focusedDay;
+    _loadViewPreference();
     _refresh();
     
     // Timer 5 sekund dla dokładności czasu
@@ -324,6 +330,18 @@ class _SchedulePageState extends State<SchedulePage> {
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _scrollToCurrentTime();
     });
+  }
+
+  Future<void> _loadViewPreference() async {
+    String? val = await _storage.read(key: 'simple_view');
+    if (val == 'true') {
+      setState(() => _isSimpleView = true);
+    }
+  }
+
+  Future<void> _toggleView() async {
+    setState(() => _isSimpleView = !_isSimpleView);
+    await _storage.write(key: 'simple_view', value: _isSimpleView.toString());
   }
 
   void _scrollToCurrentTime() {
@@ -494,17 +512,18 @@ class _SchedulePageState extends State<SchedulePage> {
       if (!grouped.containsKey(item.date)) grouped[item.date] = [];
       grouped[item.date]!.add(item);
     }
+    // Ensure today is in the list, even if empty
+    String todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    if (!grouped.containsKey(todayStr)) {
+      grouped[todayStr] = [];
+    }
+
     _groupedClasses = grouped;
     _sortedDates = grouped.keys.toList()..sort();
     
-    String todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    int initialPage = 0;
-    for (int i = 0; i < _sortedDates.length; i++) {
-      if (_sortedDates[i].compareTo(todayStr) >= 0) {
-        initialPage = i;
-        break;
-      }
-    }
+    int initialPage = _sortedDates.indexOf(todayStr);
+    if (initialPage == -1) initialPage = 0; // Fallback
+
     if (_pageController != null) _pageController!.dispose();
     _pageController = PageController(initialPage: initialPage, viewportFraction: 1.0);
     
@@ -589,8 +608,9 @@ class _SchedulePageState extends State<SchedulePage> {
         String startTime = timeParts[0];
         String endTime = timeParts.length > 1 ? timeParts[1] : "";
         
-        double leftPos = 60.0 + (i * ((MediaQuery.of(context).size.width - 70) / count));
-        double width = (MediaQuery.of(context).size.width - 70) / count;
+        double availableWidth = MediaQuery.of(context).size.width - 80; // Zwiększony margines, żeby nie wychodziło
+        double leftPos = 60.0 + (i * (availableWidth / count));
+        double width = availableWidth / count;
 
         stackChildren.add(Positioned(
           top: topOffset,
@@ -770,6 +790,86 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
+  Widget _buildSimpleList(List<ClassItem> classes) {
+    if (classes.isEmpty) return _buildEmptyDayMessage();
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: classes.length,
+      itemBuilder: (context, index) {
+        final item = classes[index];
+        final typeColor = _getColorForType(item.type);
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2C2C2C),
+            borderRadius: BorderRadius.circular(12),
+            border: Border(left: BorderSide(color: typeColor, width: 6)),
+            boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4, offset: const Offset(0, 2))],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _showClassDetails(item),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                         Text(item.time.split('-')[0].trim(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                         const SizedBox(height: 4),
+                         Text(item.time.split('-')[1].trim(), style: const TextStyle(color: Colors.white54, fontSize: 14)),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    Container(width: 1, height: 40, color: Colors.white10),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item.subject, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                          const SizedBox(height: 4),
+                          Row(children: [
+                            Icon(Icons.location_on, size: 14, color: typeColor),
+                            const SizedBox(width: 4),
+                            Text(item.room, style: const TextStyle(color: Colors.white70)),
+                            const SizedBox(width: 10),
+                            Icon(Icons.class_, size: 14, color: Colors.white38),
+                            const SizedBox(width: 4),
+                            Expanded(child: Text(item.type, style: const TextStyle(color: Colors.white38), overflow: TextOverflow.ellipsis)),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyDayMessage() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.weekend, size: 80, color: Colors.white24),
+          const SizedBox(height: 20),
+          const Text("Nie ma dzisiaj zajęć", style: TextStyle(fontSize: 20, color: Colors.white54, fontWeight: FontWeight.bold)),
+          const Text("Odpocznij!", style: TextStyle(color: Colors.white24)),
+        ],
+      ),
+    );
+  }
+
   Widget? _buildCurrentTimeLine() {
     final now = DateTime.now();
     if (now.hour < startHour || now.hour > endHour) return null;
@@ -785,7 +885,12 @@ class _SchedulePageState extends State<SchedulePage> {
         title: const Text("Schedule", style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         actions: [
-          IconButton(icon: Icon(_showCalendar ? Icons.view_agenda : Icons.calendar_month), onPressed: () => setState(() => _showCalendar = !_showCalendar)),
+          IconButton(
+            icon: Icon(_isSimpleView ? Icons.view_timeline : Icons.view_list),
+            onPressed: _toggleView,
+            tooltip: "Zmień widok",
+          ),
+          IconButton(icon: Icon(_showCalendar ? Icons.close : Icons.calendar_month), onPressed: () => setState(() => _showCalendar = !_showCalendar)),
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'refresh') _refresh();
@@ -830,7 +935,18 @@ class _SchedulePageState extends State<SchedulePage> {
                     String fullDate = DateFormat('d MMMM', 'pl_PL').format(dt);
                     bool isToday = DateFormat('yyyy-MM-dd').format(DateTime.now()) == dateKey;
 
-                    return Column(children: [Container(padding: const EdgeInsets.symmetric(vertical: 16), decoration: BoxDecoration(color: isToday ? Theme.of(context).primaryColor.withOpacity(0.1) : Colors.transparent, border: Border(bottom: BorderSide(color: Colors.white10))), child: Center(child: Column(children: [Text(dayName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isToday ? Theme.of(context).primaryColor : Colors.white)), Text(fullDate, style: const TextStyle(color: Colors.white70))]))), Expanded(child: _buildDayTimeline(_groupedClasses[dateKey]!, isToday))]);
+                    List<ClassItem> classes = _groupedClasses[dateKey]!;
+                    Widget content;
+
+                    if (classes.isEmpty) {
+                      content = _buildEmptyDayMessage();
+                    } else if (_isSimpleView) {
+                      content = _buildSimpleList(classes);
+                    } else {
+                      content = _buildDayTimeline(classes, isToday);
+                    }
+
+                    return Column(children: [Container(padding: const EdgeInsets.symmetric(vertical: 16), decoration: BoxDecoration(color: isToday ? Theme.of(context).primaryColor.withOpacity(0.1) : Colors.transparent, border: Border(bottom: BorderSide(color: Colors.white10))), child: Center(child: Column(children: [Text(dayName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isToday ? Theme.of(context).primaryColor : Colors.white)), Text(fullDate, style: const TextStyle(color: Colors.white70))]))), Expanded(child: content)]);
                   },
                 ),
               ),
