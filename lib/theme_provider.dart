@@ -7,14 +7,30 @@ class ThemeProvider with ChangeNotifier {
   static const String _primaryColorKey = 'primary_color';
   static const String _customBgKey = 'custom_bg';
 
+  static const String _lectureColorKey = 'color_lecture';
+  static const String _exerciseColorKey = 'color_exercise';
+  static const String _labColorKey = 'color_lab';
+  static const String _remoteColorKey = 'color_remote';
+
   // Default values
   ThemeMode _themeMode = ThemeMode.light;
   Color _primaryColor = const Color(0xFF6200EE); // Deep Purple
   Color? _customBackgroundColor; // If null, use default for mode
 
+  // Class Colors
+  Color _lectureColor = const Color(0xFF03DAC6);
+  Color _exerciseColor = Colors.orangeAccent;
+  Color _labColor = Colors.blueAccent;
+  Color _remoteColor = Colors.blueAccent;
+
   ThemeMode get themeMode => _themeMode;
   Color get primaryColor => _primaryColor;
   Color? get customBackgroundColor => _customBackgroundColor;
+
+  Color get lectureColor => _lectureColor;
+  Color get exerciseColor => _exerciseColor;
+  Color get labColor => _labColor;
+  Color get remoteColor => _remoteColor;
 
   bool get isDarkMode => _themeMode == ThemeMode.dark;
 
@@ -47,6 +63,12 @@ class ThemeProvider with ChangeNotifier {
       _customBackgroundColor = null;
     }
 
+    // Load Class Colors
+    _lectureColor = Color(prefs.getInt(_lectureColorKey) ?? 0xFF03DAC6);
+    _exerciseColor = Color(prefs.getInt(_exerciseColorKey) ?? Colors.orangeAccent.value);
+    _labColor = Color(prefs.getInt(_labColorKey) ?? Colors.blueAccent.value);
+    _remoteColor = Color(prefs.getInt(_remoteColorKey) ?? Colors.blueAccent.value);
+
     notifyListeners();
   }
 
@@ -60,13 +82,25 @@ class ThemeProvider with ChangeNotifier {
     } else {
       await prefs.remove(_customBgKey);
     }
+
+    await prefs.setInt(_lectureColorKey, _lectureColor.value);
+    await prefs.setInt(_exerciseColorKey, _exerciseColor.value);
+    await prefs.setInt(_labColorKey, _labColor.value);
+    await prefs.setInt(_remoteColorKey, _remoteColor.value);
   }
 
   void setThemeMode(ThemeMode mode) {
     _themeMode = mode;
+    // Reset custom background when changing mode manually to avoid "Black on Black" issues with presets
+    _customBackgroundColor = null;
     _savePreferences();
     notifyListeners();
   }
+
+  void setLectureColor(Color color) { _lectureColor = color; _savePreferences(); notifyListeners(); }
+  void setExerciseColor(Color color) { _exerciseColor = color; _savePreferences(); notifyListeners(); }
+  void setLabColor(Color color) { _labColor = color; _savePreferences(); notifyListeners(); }
+  void setRemoteColor(Color color) { _remoteColor = color; _savePreferences(); notifyListeners(); }
 
   void setPrimaryColor(Color color) {
     _primaryColor = color;

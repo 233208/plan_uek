@@ -72,6 +72,22 @@ class ThemeSettingsPage extends StatelessWidget {
           const Divider(),
           const SizedBox(height: 10),
 
+          // 1.5 KOLORY ZAJĘĆ
+          const Text("Kolory zajęć", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          Column(
+            children: [
+               _buildColorRow(context, "Wykład", themeProvider.lectureColor, themeProvider.setLectureColor),
+               _buildColorRow(context, "Ćwiczenia", themeProvider.exerciseColor, themeProvider.setExerciseColor),
+               _buildColorRow(context, "Laboratorium", themeProvider.labColor, themeProvider.setLabColor),
+               _buildColorRow(context, "Zdalne", themeProvider.remoteColor, themeProvider.setRemoteColor),
+            ],
+          ),
+
+          const SizedBox(height: 30),
+          const Divider(),
+          const SizedBox(height: 10),
+
           // 2. TRYB (JASNY/CIEMNY)
           const Text("Tryb", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
@@ -128,6 +144,68 @@ class ThemeSettingsPage extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildColorRow(BuildContext context, String label, Color currentColor, Function(Color) onColorChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 16)),
+          GestureDetector(
+            onTap: () {
+               _showColorPicker(context, currentColor, onColorChanged);
+            },
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: currentColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.grey, width: 1),
+              ),
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  void _showColorPicker(BuildContext context, Color currentColor, Function(Color) onColorChanged) {
+    final List<Color> colors = [
+      Colors.redAccent, Colors.orangeAccent, Colors.blueAccent,
+      const Color(0xFF03DAC6), Colors.purpleAccent, Colors.green,
+      Colors.pinkAccent, Colors.indigoAccent, Colors.amber, Colors.brown
+    ];
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Wybierz kolor"),
+          content: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: colors.map((color) => GestureDetector(
+              onTap: () {
+                onColorChanged(color);
+                Navigator.pop(context);
+              },
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: color.value == currentColor.value ? Border.all(color: Colors.black, width: 3) : null
+                ),
+              ),
+            )).toList(),
+          ),
+        );
+      }
     );
   }
 }

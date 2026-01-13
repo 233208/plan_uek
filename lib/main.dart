@@ -254,9 +254,9 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.school_rounded, size: 80, color: Color(0xFFBB86FC)),
+              Icon(Icons.school_rounded, size: 80, color: Theme.of(context).primaryColor),
               const SizedBox(height: 30),
-              const Text("UEK PLANNER", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2)),
+              const Text("Plan Zajęć UEK", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2)),
               const SizedBox(height: 40),
               TextField(controller: _userController, decoration: InputDecoration(labelText: 'Login (Moodle)', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
               const SizedBox(height: 16),
@@ -810,7 +810,7 @@ class _SchedulePageState extends State<SchedulePage> {
       itemBuilder: (context, index) {
         final item = classes[index];
         bool isRemote = item.room.toLowerCase().contains('zdalne') || item.type.toLowerCase().contains('zdalne');
-        Color typeColor = item.isRescheduled ? Colors.redAccent : (isRemote ? Colors.blueAccent : _getColorForType(item.type));
+        Color typeColor = item.isRescheduled ? Colors.redAccent : (isRemote ? Provider.of<ThemeProvider>(context).remoteColor : _getColorForType(item.type));
 
         Color bgColor;
         if (item.isRescheduled) {
@@ -818,7 +818,7 @@ class _SchedulePageState extends State<SchedulePage> {
           bool isDark = Theme.of(context).brightness == Brightness.dark;
           bgColor = isDark ? const Color(0xFF3E2723).withOpacity(0.8) : Colors.red.withOpacity(0.1);
         } else if (isRemote) {
-          bgColor = Theme.of(context).primaryColor.withOpacity(0.1);
+          bgColor = Provider.of<ThemeProvider>(context).remoteColor.withOpacity(0.1);
         } else {
           bgColor = Theme.of(context).cardColor;
         }
@@ -900,8 +900,8 @@ class _SchedulePageState extends State<SchedulePage> {
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(4)),
-                                  child: const Text("ZDALNE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                                  decoration: BoxDecoration(color: Provider.of<ThemeProvider>(context).remoteColor, borderRadius: BorderRadius.circular(4)),
+                                  child: Text("ZDALNE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onPrimary)),
                                 )
                               ]
                             ],
@@ -975,7 +975,7 @@ class _SchedulePageState extends State<SchedulePage> {
       floatingActionButton: FloatingActionButton(
         onPressed: _jumpToToday,
         backgroundColor: Theme.of(context).primaryColor,
-        child: const Icon(Icons.today, color: Colors.black),
+        child: Icon(Icons.today, color: Theme.of(context).colorScheme.onPrimary),
       ),
       body: FutureBuilder<Map<String, List<ClassItem>>>(
         future: _scheduleFuture,
@@ -1024,10 +1024,11 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Color _getColorForType(String type) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
     type = type.toLowerCase();
-    if (type.contains('wykład')) return const Color(0xFF03DAC6);
-    if (type.contains('ćwiczenia')) return Colors.orangeAccent;
-    if (type.contains('lab')) return Colors.blueAccent;
+    if (type.contains('wykład')) return themeProvider.lectureColor;
+    if (type.contains('ćwiczenia')) return themeProvider.exerciseColor;
+    if (type.contains('lab')) return themeProvider.labColor;
     return Colors.grey;
   }
 }
