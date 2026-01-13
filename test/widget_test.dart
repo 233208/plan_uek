@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plan_uek/main.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 // 1. MOCK HTTP OVERRIDES
 class MockHttpOverrides extends HttpOverrides {
@@ -40,7 +42,7 @@ class MockHttpClientResponse extends Fake implements HttpClientResponse {
   int get statusCode => 200;
 
   @override
-  Stream<List<int>> transform<S>(StreamTransformer<List<int>, S> streamTransformer) {
+  Stream<S> transform<S>(StreamTransformer<List<int>, S> streamTransformer) {
     // Return empty HTML or simple schedule
     String html = """
     <html><body>
