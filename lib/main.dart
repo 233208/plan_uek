@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'theme_provider.dart';
 import 'settings_page.dart';
+import 'custom_events_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,6 +54,7 @@ class ClassItem {
   final String? meetingUrl;
   final String? note;
   final bool isRescheduled;
+  final String? customEventId;
 
   ClassItem({
     required this.date,
@@ -64,6 +66,7 @@ class ClassItem {
     this.meetingUrl,
     this.note,
     this.isRescheduled = false,
+    this.customEventId,
   });
 
   DateTime? getStartDateTime() {
@@ -266,7 +269,7 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 40),
               _isLoading
                   ? const CircularProgressIndicator()
-                  : SizedBox(width: double.infinity, height: 55, child: ElevatedButton(onPressed: _login, style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("ZALOGUJ SIĘ", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)))),
+                  : SizedBox(width: double.infinity, height: 55, child: ElevatedButton(onPressed: _login, style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Theme.of(context).colorScheme.onPrimary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("ZALOGUJ SIĘ", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)))),
             ],
           ),
         ),
@@ -440,6 +443,50 @@ class _SchedulePageState extends State<SchedulePage> {
                         style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.black),
                       ),
                     ),
+                  ],
+                  if (item.customEventId != null) ...[
+                    const SizedBox(width: 10),
+                    Expanded(
+                       child: ElevatedButton.icon(
+                        onPressed: () {
+                           Navigator.pop(context);
+                           // Find the original CustomEvent object to pass for editing
+                           // We need to fetch/reconstruct it. For simplicity, we reconstruct from ClassItem as best as we can or fetch.
+                           // Better approach: Since we have the ID, we can just pass the ID and reconstruct or fetch in the dialog,
+                           // but for now let's construct a temporary object or modify the dialog to accept params.
+                           // Actually, let's just pass the data we have in ClassItem to the dialog.
+                           final eventToEdit = CustomEvent(
+                             id: item.customEventId!,
+                             date: item.date,
+                             startTime: item.time.split('-')[0],
+                             endTime: item.time.split('-')[1],
+                             title: item.subject,
+                             type: item.type,
+                             room: item.room,
+                             note: item.note ?? '',
+                           );
+                           _showEventDialog(event: eventToEdit);
+                        },
+                        icon: const Icon(Icons.edit),
+                        label: const Text("Edytuj"),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white),
+                       ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                       child: ElevatedButton.icon(
+                        onPressed: () async {
+                           await CustomEventsService.deleteEvent(_currentGroupId, item.customEventId!);
+                           if(mounted) {
+                             Navigator.pop(context);
+                             _refresh();
+                           }
+                        },
+                        icon: const Icon(Icons.delete),
+                        label: const Text("Usuń"),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+                       ),
+                    ),
                   ]
                 ],
               ),
@@ -506,6 +553,30 @@ class _SchedulePageState extends State<SchedulePage> {
 
   Future<Map<String, List<ClassItem>>> _fetchAndGroupSchedule() async {
     List<ClassItem> rawList = await ScheduleService.fetchSchedule(widget.user, widget.pass, _currentGroupId, _selectedPeriod);
+    List<CustomEvent> customList = await CustomEventsService.getEvents(_currentGroupId);
+
+    // Merge Custom Events into ClassItems
+    for (var ce in customList) {
+      rawList.add(ClassItem(
+        date: ce.date,
+        time: '${ce.startTime}-${ce.endTime}',
+        subject: ce.title,
+        type: ce.type,
+        teacher: '', // Custom events don't usually have a teacher field
+        room: ce.room,
+        note: ce.note,
+        isRescheduled: false,
+        customEventId: ce.id,
+      ));
+    }
+
+    // Sort combined list by time to ensure correct order
+    rawList.sort((a, b) {
+      final startA = a.getStartDateTime() ?? DateTime(0);
+      final startB = b.getStartDateTime() ?? DateTime(0);
+      return startA.compareTo(startB);
+    });
+
     Map<String, List<ClassItem>> grouped = {};
     for (var item in rawList) {
       if (!grouped.containsKey(item.date)) grouped[item.date] = [];
@@ -535,7 +606,41 @@ class _SchedulePageState extends State<SchedulePage> {
   void _showGroupSettings() {
     TextEditingController tempController = TextEditingController(text: _currentGroupId);
     showDialog(context: context, builder: (context) {
-        return AlertDialog(backgroundColor: Theme.of(context).cardColor, title: const Text("Ustawienia Grupy"), content: Column(mainAxisSize: MainAxisSize.min, children: [const Text("Wpisz ID swojej grupy lub wklej link:", style: TextStyle(fontSize: 13)), const SizedBox(height: 10), TextField(controller: tempController, decoration: const InputDecoration(labelText: "ID Grupy", border: OutlineInputBorder(), prefixIcon: Icon(Icons.group)))]), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Anuluj")), ElevatedButton(onPressed: () async { String newId = ScheduleService.extractGroupId(tempController.text); if (newId.isNotEmpty) { await _storage.write(key: 'group_id', value: newId); setState(() { _currentGroupId = newId; }); Navigator.pop(context); _refresh(); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Zmieniono grupę na: $newId"))); } }, style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor), child: Text("Zapisz", style: TextStyle(color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.bold)))]);
+        return AlertDialog(
+          backgroundColor: Theme.of(context).cardColor,
+          title: const Text("Ustawienia Grupy"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Wpisz ID swojej grupy lub wklej link:", style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 10),
+              TextField(controller: tempController, decoration: const InputDecoration(labelText: "ID Grupy", border: OutlineInputBorder(), prefixIcon: Icon(Icons.group))),
+              const SizedBox(height: 15),
+              Row(
+                children: [
+                   Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 20),
+                   SizedBox(width: 8),
+                   Expanded(child: Text("Zmiana grupy ukryje Twoje własne wydarzenia dla obecnej grupy.", style: TextStyle(fontSize: 12, color: Colors.orange))),
+                ],
+              )
+            ]
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Anuluj")),
+            ElevatedButton(
+              onPressed: () async {
+                String newId = ScheduleService.extractGroupId(tempController.text);
+                if (newId.isNotEmpty) {
+                  await _storage.write(key: 'group_id', value: newId);
+                  setState(() { _currentGroupId = newId; });
+                  Navigator.pop(context);
+                  _refresh();
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Zmieniono grupę na: $newId")));
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor),
+              child: Text("Zapisz", style: TextStyle(color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.bold)))
+          ]);
       }
     );
   }
@@ -626,7 +731,9 @@ class _SchedulePageState extends State<SchedulePage> {
                   borderRadius: BorderRadius.circular(6),
                   border: isNow
                       ? Border.all(color: Theme.of(context).primaryColor, width: 2)
-                      : Border(left: BorderSide(color: _getColorForType(item.type), width: 4)),
+                      : (item.customEventId != null
+                          ? Border.all(color: _getColorForType(item.type), width: 2, style: BorderStyle.solid) // Dashed border not natively supported in Border.all easily without CustomPainter, stick to solid distinctive border for now
+                          : Border(left: BorderSide(color: _getColorForType(item.type), width: 4))),
                   boxShadow: isNow ? [BoxShadow(color: Theme.of(context).primaryColor.withOpacity(0.3), blurRadius: 5)] : [],
                 ),
                 child: LayoutBuilder(
@@ -651,7 +758,7 @@ class _SchedulePageState extends State<SchedulePage> {
                     bool showNote = (!isShortClass && hasNote) || item.isRescheduled;
                     bool showType = !isShortClass && !isTiny;
 
-                    Color bgColor = item.isRescheduled ? Colors.redAccent.withOpacity(0.2) : Colors.transparent;
+                    Color bgColor = item.isRescheduled ? Colors.redAccent.withOpacity(0.2) : (item.customEventId != null ? _getColorForType(item.type).withOpacity(0.15) : Colors.transparent);
 
                     return Container(
                       color: bgColor,
@@ -945,6 +1052,11 @@ class _SchedulePageState extends State<SchedulePage> {
         title: const Text("Schedule", style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: "Dodaj wydarzenie",
+            onPressed: () => _showEventDialog(),
+          ),
           IconButton(icon: Icon(_showCalendar ? Icons.close : Icons.calendar_month), onPressed: () => setState(() => _showCalendar = !_showCalendar)),
           PopupMenuButton<String>(
             onSelected: (value) {
@@ -988,7 +1100,7 @@ class _SchedulePageState extends State<SchedulePage> {
             children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300), height: _showCalendar ? 380 : 0,
-                child: SingleChildScrollView(child: TableCalendar(locale: 'pl_PL', firstDay: kFirstDay, lastDay: kLastDay, focusedDay: _focusedDay, selectedDayPredicate: (day) => isSameDay(_selectedDay, day), eventLoader: _getEventsForDay, onDaySelected: (selectedDay, focusedDay) { setState(() { _selectedDay = selectedDay; _focusedDay = focusedDay; _showCalendar = false; }); int index = selectedDay.difference(kFirstDay).inDays; if (index >= 0 && _pageController != null) { _pageController!.jumpToPage(index); } }, calendarStyle: const CalendarStyle(markerDecoration: BoxDecoration(color: Color(0xFFBB86FC), shape: BoxShape.circle), selectedDecoration: BoxDecoration(color: Color(0xFF03DAC6), shape: BoxShape.circle), todayDecoration: BoxDecoration(color: Colors.white24, shape: BoxShape.circle)), headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true))),
+                child: SingleChildScrollView(child: TableCalendar(locale: 'pl_PL', firstDay: kFirstDay, lastDay: kLastDay, focusedDay: _focusedDay, selectedDayPredicate: (day) => isSameDay(_selectedDay, day), eventLoader: _getEventsForDay, onDaySelected: (selectedDay, focusedDay) { setState(() { _selectedDay = selectedDay; _focusedDay = focusedDay; _showCalendar = false; }); int index = selectedDay.difference(kFirstDay).inDays; if (index >= 0 && _pageController != null) { _pageController!.jumpToPage(index); } }, calendarStyle: CalendarStyle(markerDecoration: BoxDecoration(color: Theme.of(context).primaryColor, shape: BoxShape.circle), selectedDecoration: BoxDecoration(color: Theme.of(context).colorScheme.secondary, shape: BoxShape.circle), todayDecoration: BoxDecoration(color: Theme.of(context).disabledColor.withOpacity(0.3), shape: BoxShape.circle)), headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true))),
               ),
               Expanded(
                 child: PageView.builder(
@@ -1029,7 +1141,118 @@ class _SchedulePageState extends State<SchedulePage> {
     if (type.contains('wykład')) return themeProvider.lectureColor;
     if (type.contains('ćwiczenia')) return themeProvider.exerciseColor;
     if (type.contains('lab')) return themeProvider.labColor;
+    if (type.contains('egzamin')) return themeProvider.examColor;
+    if (type.contains('kolokwium')) return themeProvider.colloquiumColor;
     return Colors.grey;
+  }
+
+  void _showEventDialog({CustomEvent? event}) {
+    final titleController = TextEditingController(text: event?.title ?? '');
+    final roomController = TextEditingController(text: event?.room ?? '');
+    final noteController = TextEditingController(text: event?.note ?? '');
+    String selectedType = event?.type ?? 'Inne';
+    DateTime selectedDate = event != null ? DateTime.parse(event.date) : (_selectedDay ?? DateTime.now());
+
+    TimeOfDay startTime = const TimeOfDay(hour: 8, minute: 0);
+    TimeOfDay endTime = const TimeOfDay(hour: 9, minute: 30);
+
+    if (event != null) {
+      final startParts = event.startTime.split(':');
+      final endParts = event.endTime.split(':');
+      startTime = TimeOfDay(hour: int.parse(startParts[0]), minute: int.parse(startParts[1]));
+      endTime = TimeOfDay(hour: int.parse(endParts[0]), minute: int.parse(endParts[1]));
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(event == null ? "Dodaj wydarzenie" : "Edytuj wydarzenie"),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(controller: titleController, decoration: const InputDecoration(labelText: "Nazwa", prefixIcon: Icon(Icons.title))),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: selectedType,
+                      items: ['Kolokwium', 'Egzamin', 'Inne', 'Wykład', 'Ćwiczenia', 'Laboratorium'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                      onChanged: (val) => setDialogState(() => selectedType = val!),
+                      decoration: const InputDecoration(labelText: "Typ", prefixIcon: Icon(Icons.class_)),
+                    ),
+                    const SizedBox(height: 10),
+                    ListTile(
+                      title: Text("Data: ${DateFormat('yyyy-MM-dd').format(selectedDate)}"),
+                      leading: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final d = await showDatePicker(context: context, firstDate: kFirstDay, lastDate: kLastDay, initialDate: selectedDate);
+                        if (d != null) setDialogState(() => selectedDate = d);
+                      },
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ListTile(
+                            title: Text(startTime.format(context)),
+                            leading: const Icon(Icons.access_time),
+                            onTap: () async {
+                              final t = await showTimePicker(context: context, initialTime: startTime);
+                              if (t != null) setDialogState(() => startTime = t);
+                            },
+                          ),
+                        ),
+                        Expanded(
+                          child: ListTile(
+                            title: Text(endTime.format(context)),
+                            leading: const Icon(Icons.access_time_filled),
+                            onTap: () async {
+                              final t = await showTimePicker(context: context, initialTime: endTime);
+                              if (t != null) setDialogState(() => endTime = t);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(controller: roomController, decoration: const InputDecoration(labelText: "Sala (opcjonalnie)", prefixIcon: Icon(Icons.room))),
+                    const SizedBox(height: 10),
+                    TextField(controller: noteController, decoration: const InputDecoration(labelText: "Notatka", prefixIcon: Icon(Icons.note))),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text("Anuluj")),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (titleController.text.isEmpty) return;
+
+                    final newEvent = CustomEvent(
+                      id: event?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                      date: DateFormat('yyyy-MM-dd').format(selectedDate),
+                      startTime: '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}',
+                      endTime: '${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}',
+                      title: titleController.text,
+                      type: selectedType,
+                      room: roomController.text,
+                      note: noteController.text,
+                    );
+
+                    await CustomEventsService.saveEvent(_currentGroupId, newEvent);
+                    if (mounted) {
+                      Navigator.pop(context);
+                      _refresh();
+                    }
+                  },
+                  child: const Text("Zapisz"),
+                )
+              ],
+            );
+          }
+        );
+      }
+    );
   }
 }
 
