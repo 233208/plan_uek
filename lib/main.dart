@@ -305,7 +305,7 @@ class _SchedulePageState extends State<SchedulePage> {
   late String _currentGroupId;
   
   final ScrollController _scrollController = ScrollController();
-  final double hourHeight = 65.0; 
+  final double hourHeight = 90.0;
   final int startHour = 7; 
   final int endHour = 21;  
 
@@ -578,7 +578,7 @@ class _SchedulePageState extends State<SchedulePage> {
         if (start == null || end == null) continue;
 
         double startMinutesFromTop = (start.hour - startHour) * 60.0 + start.minute;
-        double topOffset = (startMinutesFromTop / 60.0) * hourHeight;
+        double topOffset = (startMinutesFromTop / 60.0) * hourHeight + 8.0;
         double itemHeight = (end.difference(start).inMinutes.toDouble() / 60.0) * hourHeight;
 
         int status = item.checkTimeStatus();
@@ -614,36 +614,41 @@ class _SchedulePageState extends State<SchedulePage> {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     double h = constraints.maxHeight;
-                    bool isShort = h < 55; 
-                    bool isTiny = h < 30;
+                    // Przy zwiększonej wysokości (90.0) 45 min to ok. 67.5px.
+                    // Dla pewności uznajemy za "krótkie" zajęcia trwające <= 45 min.
+                    // Obliczamy czas trwania w minutach:
+                    int durationInMinutes = end.difference(start).inMinutes;
+                    bool isShortClass = durationInMinutes <= 45;
+
+                    bool isTiny = h < 40;
                     bool isNarrow = count > 1;
                     
-                    // Sprawdzamy czy jest notatka, żeby dostosować paddingi
-                    bool hasNote = item.note != null && item.note!.isNotEmpty && !isShort;
+                    // Sprawdzamy czy jest notatka
+                    bool hasNote = item.note != null && item.note!.isNotEmpty;
 
-                    // Mniejsze paddingi dla krótkich zajęć, aby uniknąć overflow
-                    double verticalPadding = isTiny ? 1 : ((isShort || hasNote) ? 2 : 5);
+                    // Dla krótkich zajęć (<= 45 min) nie pokazujemy notatki ani prowadzącego (chyba że to jedyna informacja)
+                    // Zgodnie z życzeniem: "zajecia 44 minutowe maja miec tylko info o nazwie sali i przeniesieniu na datę"
+                    bool showTeacher = !isShortClass && !isNarrow;
+                    bool showNote = !isShortClass && hasNote;
+                    bool showType = !isShortClass && !isTiny;
 
                     return Padding(
-                      // Jeśli jest notatka, zmniejszamy padding góra/dół do 2px, żeby zyskać miejsce
-                      padding: EdgeInsets.fromLTRB(isNarrow ? 4 : 8, verticalPadding, isNarrow ? 4 : 8, verticalPadding),
+                      padding: EdgeInsets.symmetric(horizontal: isNarrow ? 4 : 8, vertical: isTiny ? 2 : 6),
                       child: Row(
                         children: [
                           // KOLUMNA 1: CZAS
                           SizedBox(
-                            width: isNarrow ? 28 : 32, 
-                            child: isTiny 
-                            ? Center(child: FittedBox(fit: BoxFit.scaleDown, child: Text(startTime, style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold))))
-                            : Column(
+                            width: isNarrow ? 28 : 34,
+                            child: Column(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  FittedBox(fit: BoxFit.scaleDown, child: Text(startTime, style: TextStyle(fontSize: isShort ? 9 : 11, fontWeight: FontWeight.w600, color: Colors.white))),
-                                  FittedBox(fit: BoxFit.scaleDown, child: Text(endTime, style: TextStyle(fontSize: isShort ? 8 : 10, color: Colors.white54))),
+                                  FittedBox(fit: BoxFit.scaleDown, child: Text(startTime, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white))),
+                                  FittedBox(fit: BoxFit.scaleDown, child: Text(endTime, style: const TextStyle(fontSize: 11, color: Colors.white54))),
                                 ],
                               ),
                           ),
                           
-                          Container(width: 1, color: Colors.white10, margin: EdgeInsets.symmetric(horizontal: isNarrow ? 3 : 6)),
+                          Container(width: 1, color: Colors.white10, margin: EdgeInsets.symmetric(horizontal: isNarrow ? 4 : 8)),
 
                           // KOLUMNA 2: INFO
                           Expanded(
@@ -651,7 +656,7 @@ class _SchedulePageState extends State<SchedulePage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                // --- GÓRA: NAZWA + TYP + (GRUPA) ---
+                                // --- GÓRA: NAZWA + (NOTATKA) ---
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
@@ -660,56 +665,52 @@ class _SchedulePageState extends State<SchedulePage> {
                                       item.subject, 
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold, 
-                                        fontSize: isShort || isNarrow ? 10 : 12, 
-                                        height: 1.0 // Zmniejszona interlinia tytułu
+                                        fontSize: isNarrow ? 11 : 13,
+                                        height: 1.1
                                       ), 
-                                      maxLines: isShort ? 1 : 2, 
+                                      maxLines: showNote ? 2 : (isShortClass ? 2 : 3),
                                       overflow: TextOverflow.ellipsis
                                     ),
                                     
-                                    // NOTATKA (GRUPA)
-                                    if (hasNote)
+                                    // NOTATKA (tylko dla długich)
+                                    if (showNote)
                                       Padding(
-                                        padding: const EdgeInsets.only(top: 1.0, bottom: 1.0),
+                                        padding: const EdgeInsets.only(top: 2.0),
                                         child: Text(
                                           item.note!, 
-                                          style: const TextStyle(fontSize: 9, color: Colors.orangeAccent, fontWeight: FontWeight.bold), 
+                                          style: const TextStyle(fontSize: 10, color: Colors.orangeAccent, fontWeight: FontWeight.bold),
                                           maxLines: 1, 
                                           overflow: TextOverflow.ellipsis
                                         ),
                                       ),
-                                    
-                                    // Odstęp (mniejszy jeśli jest notatka)
-                                    SizedBox(height: (isShort || hasNote) ? 1 : 3), 
 
-                                    // TYP ZAJĘĆ
-                                    if (!isTiny) 
-                                      Text(
-                                        item.type, 
-                                        style: TextStyle(
-                                          // Jeśli jest notatka, zmniejsz czcionkę typu do 9
-                                          fontSize: (isShort || isNarrow || hasNote) ? 9 : 10, 
-                                          color: Colors.white54, 
-                                          height: 1.0
-                                        ), 
-                                        maxLines: 1, 
-                                        overflow: TextOverflow.ellipsis
+                                    // TYP ZAJĘĆ (tylko dla długich)
+                                    if (showType)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2.0),
+                                        child: Text(
+                                          item.type,
+                                          style: const TextStyle(fontSize: 10, color: Colors.white54),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis
+                                        ),
                                       ),
                                   ],
                                 ),
 
-                                // --- ŚRODEK: PROWADZĄCY ---
-                                if (!isShort && !isNarrow) 
+                                // --- ŚRODEK: PROWADZĄCY (tylko dla długich) ---
+                                if (showTeacher)
                                   Expanded(
-                                    child: Center( // Center + Align lewo lepiej centruje w pionie bez ucinania
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
                                       child: Row(
                                         children: [
-                                          const Icon(Icons.person, size: 12, color: Colors.white30),
+                                          const Icon(Icons.person, size: 13, color: Colors.white30),
                                           const SizedBox(width: 4),
                                           Expanded(
                                             child: Text(
                                               item.teacher, 
-                                              style: const TextStyle(fontSize: 10, color: Colors.white38),
+                                              style: const TextStyle(fontSize: 11, color: Colors.white38),
                                               maxLines: 1, 
                                               overflow: TextOverflow.ellipsis
                                             ),
@@ -719,16 +720,16 @@ class _SchedulePageState extends State<SchedulePage> {
                                     ),
                                   ),
 
-                                // --- DÓŁ: SALA ---
+                                // --- DÓŁ: SALA (zawsze) ---
                                 Row(
                                   children: [
-                                    Icon(Icons.location_on, size: isShort ? 10 : 11, color: _getColorForType(item.type)),
+                                    Icon(Icons.location_on, size: 12, color: _getColorForType(item.type)),
                                     const SizedBox(width: 4),
                                     Expanded(
                                       child: Text(
                                         item.room, 
-                                        style: TextStyle(
-                                          fontSize: isShort || isNarrow ? 9 : 11, 
+                                        style: const TextStyle(
+                                          fontSize: 11,
                                           color: Colors.white, 
                                           fontWeight: FontWeight.w500
                                         ), 
