@@ -297,10 +297,13 @@ class _SchedulePageState extends State<SchedulePage> {
   final _storage = const FlutterSecureStorage();
   
   Map<String, List<ClassItem>> _groupedClasses = {};
-  List<String> _sortedDates = [];
   
   final int _selectedPeriod = 2;
   
+  // Date range constants
+  final DateTime kFirstDay = DateTime.utc(2023, 10, 1);
+  final DateTime kLastDay = DateTime.utc(2026, 12, 31);
+
   bool _showCalendar = false;
   bool _isSimpleView = false;
   PageController? _pageController;
@@ -355,26 +358,30 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   void _jumpToToday() {
-    String todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    int index = _sortedDates.indexOf(todayStr);
+    final now = DateTime.now();
+    final today = DateTime.utc(now.year, now.month, now.day);
 
-    if (index != -1) {
-      _pageController?.animateToPage(
-        index, 
-        duration: const Duration(milliseconds: 500), 
-        curve: Curves.easeInOut
-      );
-      Future.delayed(const Duration(milliseconds: 600), () {
-        _scrollToCurrentTime();
-      });
-      setState(() {
-        _selectedDay = DateTime.now();
-        _focusedDay = DateTime.now();
-        _showCalendar = false;
-      });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Brak zajęć dzisiaj!")));
+    // Check range
+    if (today.isBefore(kFirstDay) || today.isAfter(kLastDay)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Dzisiejsza data jest poza zakresem kalendarza!")));
+      return;
     }
+
+    int index = today.difference(kFirstDay).inDays;
+
+    _pageController?.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut
+    );
+    Future.delayed(const Duration(milliseconds: 600), () {
+      _scrollToCurrentTime();
+    });
+    setState(() {
+      _selectedDay = DateTime.now();
+      _focusedDay = DateTime.now();
+      _showCalendar = false;
+    });
   }
 
   Future<void> _openScheduleInBrowser() async {
@@ -512,17 +519,16 @@ class _SchedulePageState extends State<SchedulePage> {
       if (!grouped.containsKey(item.date)) grouped[item.date] = [];
       grouped[item.date]!.add(item);
     }
-    // Ensure today is in the list, even if empty
-    String todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    if (!grouped.containsKey(todayStr)) {
-      grouped[todayStr] = [];
-    }
 
     _groupedClasses = grouped;
-    _sortedDates = grouped.keys.toList()..sort();
     
-    int initialPage = _sortedDates.indexOf(todayStr);
-    if (initialPage == -1) initialPage = 0; // Fallback
+    // Calculate initial page based on today vs kFirstDay
+    final now = DateTime.now();
+    final today = DateTime.utc(now.year, now.month, now.day);
+    int initialPage = 0;
+    if (!today.isBefore(kFirstDay) && !today.isAfter(kLastDay)) {
+      initialPage = today.difference(kFirstDay).inDays;
+    }
 
     if (_pageController != null) _pageController!.dispose();
     _pageController = PageController(initialPage: initialPage, viewportFraction: 1.0);
@@ -922,20 +928,20 @@ class _SchedulePageState extends State<SchedulePage> {
             children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300), height: _showCalendar ? 380 : 0,
-                child: SingleChildScrollView(child: TableCalendar(locale: 'pl_PL', firstDay: DateTime.utc(2023, 10, 1), lastDay: DateTime.utc(2026, 12, 31), focusedDay: _focusedDay, selectedDayPredicate: (day) => isSameDay(_selectedDay, day), eventLoader: _getEventsForDay, onDaySelected: (selectedDay, focusedDay) { setState(() { _selectedDay = selectedDay; _focusedDay = focusedDay; _showCalendar = false; }); String dateKey = DateFormat('yyyy-MM-dd').format(selectedDay); int index = _sortedDates.indexOf(dateKey); if (index != -1 && _pageController != null) _pageController!.jumpToPage(index); else ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Brak zajęć w tym dniu."))); }, calendarStyle: const CalendarStyle(markerDecoration: BoxDecoration(color: Color(0xFFBB86FC), shape: BoxShape.circle), selectedDecoration: BoxDecoration(color: Color(0xFF03DAC6), shape: BoxShape.circle), todayDecoration: BoxDecoration(color: Colors.white24, shape: BoxShape.circle)), headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true))),
+                child: SingleChildScrollView(child: TableCalendar(locale: 'pl_PL', firstDay: kFirstDay, lastDay: kLastDay, focusedDay: _focusedDay, selectedDayPredicate: (day) => isSameDay(_selectedDay, day), eventLoader: _getEventsForDay, onDaySelected: (selectedDay, focusedDay) { setState(() { _selectedDay = selectedDay; _focusedDay = focusedDay; _showCalendar = false; }); int index = selectedDay.difference(kFirstDay).inDays; if (index >= 0 && _pageController != null) { _pageController!.jumpToPage(index); } }, calendarStyle: const CalendarStyle(markerDecoration: BoxDecoration(color: Color(0xFFBB86FC), shape: BoxShape.circle), selectedDecoration: BoxDecoration(color: Color(0xFF03DAC6), shape: BoxShape.circle), todayDecoration: BoxDecoration(color: Colors.white24, shape: BoxShape.circle)), headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true))),
               ),
               Expanded(
                 child: PageView.builder(
                   controller: _pageController,
-                  itemCount: _sortedDates.length,
+                  itemCount: kLastDay.difference(kFirstDay).inDays + 1,
                   itemBuilder: (context, index) {
-                    String dateKey = _sortedDates[index];
-                    DateTime dt = DateTime.parse(dateKey);
+                    DateTime dt = kFirstDay.add(Duration(days: index));
+                    String dateKey = DateFormat('yyyy-MM-dd').format(dt);
                     String dayName = toBeginningOfSentenceCase(DateFormat('EEEE', 'pl_PL').format(dt))!;
                     String fullDate = DateFormat('d MMMM', 'pl_PL').format(dt);
                     bool isToday = DateFormat('yyyy-MM-dd').format(DateTime.now()) == dateKey;
 
-                    List<ClassItem> classes = _groupedClasses[dateKey]!;
+                    List<ClassItem> classes = _groupedClasses[dateKey] ?? [];
                     Widget content;
 
                     if (classes.isEmpty) {
