@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,6 +47,21 @@ class MockHttpHeaders extends Fake implements HttpHeaders {
 }
 
 class MockHttpClientResponse extends Fake implements HttpClientResponse {
+  final _stream = Stream.value(utf8.encode("""
+    <html><body>
+    <table>
+      <tr>
+        <td>2023-10-15</td>
+        <td>08:00-09:30</td>
+        <td>Matematyka</td>
+        <td>Wykład</td>
+        <td>Dr. X</td>
+        <td>Sala 101</td>
+      </tr>
+    </table>
+    </body></html>
+    """));
+
   @override
   int get statusCode => 200;
 
@@ -59,29 +75,9 @@ class MockHttpClientResponse extends Fake implements HttpClientResponse {
   HttpClientResponseCompressionState get compressionState => HttpClientResponseCompressionState.notCompressed;
 
   @override
-  Stream<S> transform<S>(StreamTransformer<List<int>, S> streamTransformer) {
-    // Return empty HTML or simple schedule
-    String html = """
-    <html><body>
-    <table>
-      <tr>
-        <td>2023-10-15</td>
-        <td>08:00-09:30</td>
-        <td>Matematyka</td>
-        <td>Wykład</td>
-        <td>Dr. X</td>
-        <td>Sala 101</td>
-      </tr>
-    </table>
-    </body></html>
-    """;
-    return Stream.value(html.codeUnits).transform(streamTransformer);
+  StreamSubscription<List<int>> listen(void Function(List<int> event)? onData, {Function? onError, void Function()? onDone, bool? cancelOnError}) {
+    return _stream.listen(onData, onError: onError, onDone: onDone, cancelOnError: cancelOnError);
   }
-
-  // Need to implement pipe or other methods if the code uses them,
-  // but standard http.get uses transform/listen.
-  // Actually http.get returns a Response object directly in higher level,
-  // but internally it uses HttpClient.
 }
 
 void main() {
