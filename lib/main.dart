@@ -63,6 +63,7 @@ class ClassItem {
   final String room;
   final String? meetingUrl;
   final String? note;
+  final bool isRescheduled;
 
   ClassItem({
     required this.date,
@@ -73,6 +74,7 @@ class ClassItem {
     required this.room,
     this.meetingUrl,
     this.note,
+    this.isRescheduled = false,
   });
 
   DateTime? getStartDateTime() {
@@ -177,6 +179,8 @@ class ScheduleService {
           }
         }
 
+        bool isRescheduled = row.classes.contains('czerwony');
+
         classes.add(ClassItem(
           date: cells[0].text.trim(),
           time: rawTime,
@@ -186,6 +190,7 @@ class ScheduleService {
           room: cells[5].text.trim(),
           meetingUrl: extractedUrl,
           note: groupNote,
+          isRescheduled: isRescheduled,
         ));
       }
     }
@@ -654,11 +659,15 @@ class _SchedulePageState extends State<SchedulePage> {
 
                     // Dla krótkich zajęć (<= 45 min) nie pokazujemy notatki ani prowadzącego (chyba że to jedyna informacja)
                     // Zgodnie z życzeniem: "zajecia 44 minutowe maja miec tylko info o nazwie sali i przeniesieniu na datę"
-                    bool showTeacher = !isShortClass && !isNarrow;
-                    bool showNote = !isShortClass && hasNote;
+                    // WYJĄTEK: Jeśli zajęcia są PRZENIESIONE, pokazujemy to zawsze!
+                    bool showTeacher = !isShortClass && !isNarrow && !item.isRescheduled;
+                    bool showNote = (!isShortClass && hasNote) || item.isRescheduled;
                     bool showType = !isShortClass && !isTiny;
 
-                    return Padding(
+                    Color bgColor = item.isRescheduled ? Colors.redAccent.withOpacity(0.2) : Colors.transparent;
+
+                    return Container(
+                      color: bgColor,
                       padding: EdgeInsets.symmetric(horizontal: isNarrow ? 4 : 8, vertical: isTiny ? 2 : 6),
                       child: Row(
                         children: [
@@ -698,14 +707,18 @@ class _SchedulePageState extends State<SchedulePage> {
                                       overflow: TextOverflow.ellipsis
                                     ),
                                     
-                                    // NOTATKA (tylko dla długich)
-                                    if (showNote)
+                                    // NOTATKA (tylko dla długich LUB przeniesionych)
+                                    if (showNote && item.note != null)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 2.0),
                                         child: Text(
                                           item.note!, 
-                                          style: const TextStyle(fontSize: 10, color: Colors.orangeAccent, fontWeight: FontWeight.bold),
-                                          maxLines: 1, 
+                                          style: TextStyle(
+                                            fontSize: item.isRescheduled ? 12 : 10,
+                                            color: item.isRescheduled ? Colors.redAccent : Colors.orangeAccent,
+                                            fontWeight: FontWeight.bold
+                                          ),
+                                          maxLines: item.isRescheduled ? 2 : 1,
                                           overflow: TextOverflow.ellipsis
                                         ),
                                       ),
@@ -804,12 +817,12 @@ class _SchedulePageState extends State<SchedulePage> {
       itemCount: classes.length,
       itemBuilder: (context, index) {
         final item = classes[index];
-        final typeColor = _getColorForType(item.type);
+        final typeColor = item.isRescheduled ? Colors.redAccent : _getColorForType(item.type);
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFF2C2C2C),
+            color: item.isRescheduled ? const Color(0xFF3E2723) : const Color(0xFF2C2C2C), // Darker red bg if rescheduled
             borderRadius: BorderRadius.circular(12),
             border: Border(left: BorderSide(color: typeColor, width: 6)),
             boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4, offset: const Offset(0, 2))],
@@ -839,6 +852,13 @@ class _SchedulePageState extends State<SchedulePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(item.subject, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                          if (item.isRescheduled && item.note != null) ...[
+                             const SizedBox(height: 4),
+                             Text(
+                               "PRZENIESIONE: ${item.note}",
+                               style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 14)
+                             ),
+                          ],
                           const SizedBox(height: 4),
                           Row(children: [
                             Icon(Icons.location_on, size: 14, color: typeColor),
