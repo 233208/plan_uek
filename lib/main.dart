@@ -837,11 +837,11 @@ class _SchedulePageState extends State<SchedulePage> {
                           Row(children: [
                             Icon(Icons.location_on, size: 14, color: typeColor),
                             const SizedBox(width: 4),
-                            Text(item.room, style: const TextStyle(color: Colors.white70)),
+                            Flexible(child: Text(item.room, style: const TextStyle(color: Colors.white70), overflow: TextOverflow.ellipsis)),
                             const SizedBox(width: 10),
                             Icon(Icons.class_, size: 14, color: Colors.white38),
                             const SizedBox(width: 4),
-                            Expanded(child: Text(item.type, style: const TextStyle(color: Colors.white38), overflow: TextOverflow.ellipsis)),
+                            Flexible(child: Text(item.type, style: const TextStyle(color: Colors.white38), overflow: TextOverflow.ellipsis)),
                           ]),
                         ],
                       ),
@@ -882,14 +882,14 @@ class _SchedulePageState extends State<SchedulePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: Icon(_isSimpleView ? Icons.view_timeline : Icons.view_list),
+          onPressed: _toggleView,
+          tooltip: "Zmień widok",
+        ),
         title: const Text("Schedule", style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: Icon(_isSimpleView ? Icons.view_timeline : Icons.view_list),
-            onPressed: _toggleView,
-            tooltip: "Zmień widok",
-          ),
           IconButton(icon: Icon(_showCalendar ? Icons.close : Icons.calendar_month), onPressed: () => setState(() => _showCalendar = !_showCalendar)),
           PopupMenuButton<String>(
             onSelected: (value) {
