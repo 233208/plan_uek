@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:http/http.dart' as http;
@@ -16,6 +17,9 @@ import 'settings_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // --- SECURITY: SSL PINNING ---
+  HttpOverrides.global = UEKHttpOverrides();
+
   await initializeDateFormatting('pl_PL', null);
   runApp(
     ChangeNotifierProvider(
@@ -23,6 +27,44 @@ void main() async {
       child: const UekScheduleApp(),
     ),
   );
+}
+
+// --- SECURITY: SSL PINNING IMPLEMENTATION ---
+class UEKHttpOverrides extends HttpOverrides {
+  // SHA-256 Fingerprint of *.uek.krakow.pl certificate (DER)
+  // Extracted: M9t8gAVDd2j6OEhZF/ovi7OrSlq9o036q0hEHZXYuGk=
+  final String _expectedHash = "M9t8gAVDd2j6OEhZF/ovi7OrSlq9o036q0hEHZXYuGk=";
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    // FORCE NO TRUSTED ROOTS: This ensures NO certificate is trusted by default.
+    // This forces `badCertificateCallback` to be called for EVERY connection.
+    final SecurityContext secureContext = SecurityContext(withTrustedRoots: false);
+
+    final client = super.createHttpClient(secureContext);
+
+    client.badCertificateCallback = (X509Certificate cert, String host, int port) {
+      // 1. Check Hostname
+      if (!host.endsWith('uek.krakow.pl')) {
+        return false; // Block unknown hosts
+      }
+
+      // 2. Calculate SHA-256 of the Certificate (DER)
+      final startHash = sha256.convert(cert.der).bytes;
+      final base64Hash = base64Encode(startHash);
+
+      // 3. Compare with Pin
+      bool isMatch = base64Hash == _expectedHash;
+
+      if (!isMatch) {
+        print("SECURITY ALERT: Certificate Pinning Mismatch! Expected: $_expectedHash, Got: $base64Hash");
+      }
+
+      return isMatch;
+    };
+
+    return client;
+  }
 }
 
 // --- 1. MOTYW APLIKACJI ---
