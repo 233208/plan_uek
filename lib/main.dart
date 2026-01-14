@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:http/http.dart' as http;
@@ -16,6 +17,9 @@ import 'settings_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // --- SECURITY: SSL PINNING ---
+  HttpOverrides.global = UEKHttpOverrides();
+  
   await initializeDateFormatting('pl_PL', null);
   runApp(
     ChangeNotifierProvider(
@@ -23,6 +27,60 @@ void main() async {
       child: const UekScheduleApp(),
     ),
   );
+}
+
+// --- SECURITY: SSL PINNING IMPLEMENTATION ---
+class UEKHttpOverrides extends HttpOverrides {
+  // SHA-256 Fingerprints (Allowed Certificates)
+  final List<String> _allowedHashes = [
+    "M9t8gAVDd2j6OEhZF/ovi7OrSlq9o036q0hEHZXYuGk=", // Primary Server (Detected by Audit)
+    "Ss2NxgIKVFqFiUOlU7Xg8/xbhZrqF0ZlDWnPEhD5Vtg=", // User Logged Hash (Corrected)
+  ];
+  
+  // Debug storage
+  static String? lastSeenHash;
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    // FORCE NO TRUSTED ROOTS: This ensures NO certificate is trusted by default.
+    // This forces `badCertificateCallback` to be called for EVERY connection.
+    final SecurityContext secureContext = SecurityContext(withTrustedRoots: false);
+    
+    final client = super.createHttpClient(secureContext);
+    
+    client.badCertificateCallback = (X509Certificate cert, String host, int port) {
+      print("DEBUG: SSL Callback Triggered for $host");
+      
+      // 1. Check Hostname
+      if (!host.endsWith('uek.krakow.pl')) {
+        print("DEBUG: Blocked host $host");
+        return false; // Block unknown hosts
+      }
+
+      // 2. Calculate SHA-256 of the Certificate (DER)
+      final startHash = sha256.convert(cert.der).bytes;
+      final base64Hash = base64Encode(startHash).trim(); // Ensure no trailing newlines
+      
+      // 3. Compare with Pin
+      bool isMatch = _allowedHashes.contains(base64Hash);
+      
+      // Explicit fallback for the user's reported hash (to rule out list issues)
+      if (!isMatch && base64Hash == "Ss2NxgIKVFqFiUOlU7Xg8/xbhZrqF0ZlDWnPEhD5Vtg=") {
+        isMatch = true;
+      }
+
+      if (!isMatch) {
+        lastSeenHash = base64Hash;
+        // Print with quotes to see hidden characters
+        print("SECURITY ALERT: Certificate Pinning Mismatch! Got: '$base64Hash'");
+        print("Expected one of: $_allowedHashes");
+      }
+      
+      return isMatch;
+    };
+    
+    return client;
+  }
 }
 
 // --- 1. MOTYW APLIKACJI ---
@@ -118,7 +176,10 @@ class ScheduleService {
     String basicAuth = 'Basic ' + base64Encode(utf8.encode('$username:$password'));
 
     try {
+      print("DEBUG: Sending request to $url");
       final response = await http.get(url, headers: {'authorization': basicAuth});
+      print("DEBUG: Response Code: ${response.statusCode}");
+      
       if (response.statusCode == 200) {
         return _parseHtml(utf8.decode(response.bodyBytes));
       } else if (response.statusCode == 401) {
@@ -127,6 +188,7 @@ class ScheduleService {
         throw Exception("Błąd serwera: ${response.statusCode}");
       }
     } catch (e) {
+      print("DEBUG: Network Error: $e");
       throw Exception("Błąd połączenia: $e");
     }
   }
@@ -239,7 +301,10 @@ class _LoginPageState extends State<LoginPage> {
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SchedulePage(user: user, pass: pass, groupId: groupId)));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Błąd: $e"), backgroundColor: Colors.red));
+      // Generic error message for security (don't leak stack trace or hash to UI)
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Błąd logowania. Sprawdź dane lub połączenie."), backgroundColor: Colors.red));
+      // Log technical details for developer only
+      print("LOGIN ERROR: $e"); 
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

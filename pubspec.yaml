@@ -13,6 +13,7 @@ dependencies:
   # --- Sieć i HTML ---
   http: ^1.2.0
   html: ^0.15.4
+  crypto: ^3.0.3
   
   # --- Formatowanie Dat ---
   intl: ^0.19.0

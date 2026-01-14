@@ -3,6 +3,8 @@
     <application
         android:label="Plan Zajęć UEK"
         android:name="${applicationName}"
+        android:allowBackup="false"
+        android:usesCleartextTraffic="false"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
