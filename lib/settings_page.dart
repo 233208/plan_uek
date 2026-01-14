@@ -81,8 +81,6 @@ class ThemeSettingsPage extends StatelessWidget {
                _buildColorRow(context, "Ćwiczenia", themeProvider.exerciseColor, themeProvider.setExerciseColor),
                _buildColorRow(context, "Laboratorium", themeProvider.labColor, themeProvider.setLabColor),
                _buildColorRow(context, "Zdalne", themeProvider.remoteColor, themeProvider.setRemoteColor),
-               _buildColorRow(context, "Egzamin", themeProvider.examColor, themeProvider.setExamColor),
-               _buildColorRow(context, "Kolokwium", themeProvider.colloquiumColor, themeProvider.setColloquiumColor),
             ],
           ),
 

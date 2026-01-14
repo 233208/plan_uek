@@ -11,8 +11,6 @@ class ThemeProvider with ChangeNotifier {
   static const String _exerciseColorKey = 'color_exercise';
   static const String _labColorKey = 'color_lab';
   static const String _remoteColorKey = 'color_remote';
-  static const String _examColorKey = 'color_exam';
-  static const String _colloquiumColorKey = 'color_colloquium';
 
   // Default values
   ThemeMode _themeMode = ThemeMode.light;
@@ -24,8 +22,6 @@ class ThemeProvider with ChangeNotifier {
   Color _exerciseColor = Colors.orangeAccent;
   Color _labColor = Colors.blueAccent;
   Color _remoteColor = Colors.blueAccent;
-  Color _examColor = Colors.redAccent;
-  Color _colloquiumColor = Colors.amberAccent;
 
   ThemeMode get themeMode => _themeMode;
   Color get primaryColor => _primaryColor;
@@ -35,8 +31,6 @@ class ThemeProvider with ChangeNotifier {
   Color get exerciseColor => _exerciseColor;
   Color get labColor => _labColor;
   Color get remoteColor => _remoteColor;
-  Color get examColor => _examColor;
-  Color get colloquiumColor => _colloquiumColor;
 
   bool get isDarkMode => _themeMode == ThemeMode.dark;
 
@@ -74,8 +68,6 @@ class ThemeProvider with ChangeNotifier {
     _exerciseColor = Color(prefs.getInt(_exerciseColorKey) ?? Colors.orangeAccent.value);
     _labColor = Color(prefs.getInt(_labColorKey) ?? Colors.blueAccent.value);
     _remoteColor = Color(prefs.getInt(_remoteColorKey) ?? Colors.blueAccent.value);
-    _examColor = Color(prefs.getInt(_examColorKey) ?? Colors.redAccent.value);
-    _colloquiumColor = Color(prefs.getInt(_colloquiumColorKey) ?? Colors.amberAccent.value);
 
     notifyListeners();
   }
@@ -95,8 +87,6 @@ class ThemeProvider with ChangeNotifier {
     await prefs.setInt(_exerciseColorKey, _exerciseColor.value);
     await prefs.setInt(_labColorKey, _labColor.value);
     await prefs.setInt(_remoteColorKey, _remoteColor.value);
-    await prefs.setInt(_examColorKey, _examColor.value);
-    await prefs.setInt(_colloquiumColorKey, _colloquiumColor.value);
   }
 
   void setThemeMode(ThemeMode mode) {
@@ -111,8 +101,6 @@ class ThemeProvider with ChangeNotifier {
   void setExerciseColor(Color color) { _exerciseColor = color; _savePreferences(); notifyListeners(); }
   void setLabColor(Color color) { _labColor = color; _savePreferences(); notifyListeners(); }
   void setRemoteColor(Color color) { _remoteColor = color; _savePreferences(); notifyListeners(); }
-  void setExamColor(Color color) { _examColor = color; _savePreferences(); notifyListeners(); }
-  void setColloquiumColor(Color color) { _colloquiumColor = color; _savePreferences(); notifyListeners(); }
 
   void setPrimaryColor(Color color) {
     _primaryColor = color;
