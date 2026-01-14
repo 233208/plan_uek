@@ -10,22 +10,19 @@ import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
-
-// --- 0. NAPRAWA SSL ---
-class MyHttpOverrides extends HttpOverrides {
-  @override
-  HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true;
-  }
-}
+import 'package:provider/provider.dart';
+import 'theme_provider.dart';
+import 'settings_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('pl_PL', null);
-  HttpOverrides.global = MyHttpOverrides();
-  runApp(const UekScheduleApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: const UekScheduleApp(),
+    ),
+  );
 }
 
 // --- 1. MOTYW APLIKACJI ---
@@ -34,20 +31,12 @@ class UekScheduleApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    
     return MaterialApp(
-      title: 'Plan UEK',
+      title: 'Plan Zajęć UEK',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        primaryColor: const Color(0xFFBB86FC),
-        cardColor: const Color(0xFF1E1E1E),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFFBB86FC),
-          secondary: Color(0xFF03DAC6),
-          surface: Color(0xFF1E1E1E),
-        ),
-        useMaterial3: true,
-      ),
+      theme: themeProvider.currentThemeData,
       home: const LoginPage(),
     );
   }
@@ -63,6 +52,7 @@ class ClassItem {
   final String room;
   final String? meetingUrl;
   final String? note;
+  final bool isRescheduled;
 
   ClassItem({
     required this.date,
@@ -73,6 +63,7 @@ class ClassItem {
     required this.room,
     this.meetingUrl,
     this.note,
+    this.isRescheduled = false,
   });
 
   DateTime? getStartDateTime() {
@@ -177,6 +168,8 @@ class ScheduleService {
           }
         }
 
+        bool isRescheduled = row.classes.contains('czerwony');
+
         classes.add(ClassItem(
           date: cells[0].text.trim(),
           time: rawTime,
@@ -186,6 +179,7 @@ class ScheduleService {
           room: cells[5].text.trim(),
           meetingUrl: extractedUrl,
           note: groupNote,
+          isRescheduled: isRescheduled,
         ));
       }
     }
@@ -210,10 +204,10 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    _loadCredentials();
+    _loadAndAutoLogin();
   }
 
-  Future<void> _loadCredentials() async {
+  Future<void> _loadAndAutoLogin() async {
     String? user = await _storage.read(key: 'login');
     String? pass = await _storage.read(key: 'pass');
     String? group = await _storage.read(key: 'group_id');
@@ -221,6 +215,10 @@ class _LoginPageState extends State<LoginPage> {
     if (user != null) _userController.text = user;
     if (pass != null) _passController.text = pass;
     _groupController.text = group ?? '237961'; 
+
+    if (user != null && pass != null && group != null && user.isNotEmpty && pass.isNotEmpty) {
+      _login();
+    }
   }
 
   void _login() async {
@@ -256,9 +254,9 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.school_rounded, size: 80, color: Color(0xFFBB86FC)),
+              Icon(Icons.school_rounded, size: 80, color: Theme.of(context).primaryColor),
               const SizedBox(height: 30),
-              const Text("UEK PLANNER", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2)),
+              const Text("Plan Zajęć UEK", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 2)),
               const SizedBox(height: 40),
               TextField(controller: _userController, decoration: InputDecoration(labelText: 'Login (Moodle)', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
               const SizedBox(height: 16),
@@ -268,7 +266,7 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 40),
               _isLoading
                   ? const CircularProgressIndicator()
-                  : SizedBox(width: double.infinity, height: 55, child: ElevatedButton(onPressed: _login, style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("ZALOGUJ SIĘ", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)))),
+                  : SizedBox(width: double.infinity, height: 55, child: ElevatedButton(onPressed: _login, style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor, foregroundColor: Theme.of(context).colorScheme.onPrimary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text("ZALOGUJ SIĘ", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)))),
             ],
           ),
         ),
@@ -293,19 +291,22 @@ class _SchedulePageState extends State<SchedulePage> {
   final _storage = const FlutterSecureStorage();
   
   Map<String, List<ClassItem>> _groupedClasses = {};
-  List<String> _sortedDates = [];
   
   final int _selectedPeriod = 2;
   
+  // Date range constants
+  late final DateTime kFirstDay;
+  late final DateTime kLastDay;
+
   bool _showCalendar = false;
+  bool _isSimpleView = false;
   PageController? _pageController;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  Timer? _timer;
   late String _currentGroupId;
   
   final ScrollController _scrollController = ScrollController();
-  final double hourHeight = 65.0; 
+  final double hourHeight = 90.0;
   final int startHour = 7; 
   final int endHour = 21;  
 
@@ -314,16 +315,29 @@ class _SchedulePageState extends State<SchedulePage> {
     super.initState();
     _currentGroupId = widget.groupId;
     _selectedDay = _focusedDay;
+
+    final now = DateTime.now();
+    kFirstDay = DateTime.utc(now.year - 1, 10, 1);
+    kLastDay = DateTime.utc(now.year + 2, 9, 30);
+
+    _loadViewPreference();
     _refresh();
-    
-    // Timer 5 sekund dla dokładności czasu
-    _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (mounted) setState(() {});
-    });
 
     SchedulerBinding.instance.addPostFrameCallback((_) {
       _scrollToCurrentTime();
     });
+  }
+
+  Future<void> _loadViewPreference() async {
+    String? val = await _storage.read(key: 'simple_view');
+    if (val == 'true') {
+      setState(() => _isSimpleView = true);
+    }
+  }
+
+  Future<void> _toggleView() async {
+    setState(() => _isSimpleView = !_isSimpleView);
+    await _storage.write(key: 'simple_view', value: _isSimpleView.toString());
   }
 
   void _scrollToCurrentTime() {
@@ -337,26 +351,30 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   void _jumpToToday() {
-    String todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    int index = _sortedDates.indexOf(todayStr);
+    final now = DateTime.now();
+    final today = DateTime.utc(now.year, now.month, now.day);
 
-    if (index != -1) {
-      _pageController?.animateToPage(
-        index, 
-        duration: const Duration(milliseconds: 500), 
-        curve: Curves.easeInOut
-      );
-      Future.delayed(const Duration(milliseconds: 600), () {
-        _scrollToCurrentTime();
-      });
-      setState(() {
-        _selectedDay = DateTime.now();
-        _focusedDay = DateTime.now();
-        _showCalendar = false;
-      });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Brak zajęć dzisiaj!")));
+    // Check range
+    if (today.isBefore(kFirstDay) || today.isAfter(kLastDay)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Dzisiejsza data jest poza zakresem kalendarza!")));
+      return;
     }
+
+    int index = today.difference(kFirstDay).inDays;
+
+    _pageController?.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut
+    );
+    Future.delayed(const Duration(milliseconds: 600), () {
+      _scrollToCurrentTime();
+    });
+    setState(() {
+      _selectedDay = DateTime.now();
+      _focusedDay = DateTime.now();
+      _showCalendar = false;
+    });
   }
 
   Future<void> _openScheduleInBrowser() async {
@@ -376,7 +394,7 @@ class _SchedulePageState extends State<SchedulePage> {
   void _showClassDetails(ClassItem item) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return Container(
@@ -385,7 +403,7 @@ class _SchedulePageState extends State<SchedulePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[700], borderRadius: BorderRadius.circular(2)))),
+              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Theme.of(context).dividerColor, borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 20),
               Text(item.subject, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).primaryColor)),
               const SizedBox(height: 5),
@@ -439,9 +457,9 @@ class _SchedulePageState extends State<SchedulePage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20, color: Colors.grey),
+          Icon(icon, size: 20, color: Theme.of(context).iconTheme.color?.withOpacity(0.6)),
           const SizedBox(width: 12),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 16, color: Colors.white70))),
+          Expanded(child: Text(text, style: TextStyle(fontSize: 16, color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.8)))),
         ],
       ),
     );
@@ -450,7 +468,7 @@ class _SchedulePageState extends State<SchedulePage> {
   void _logout() async {
     showDialog(context: context, builder: (context) {
       return AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
+        backgroundColor: Theme.of(context).cardColor,
         title: const Text("Wylogowanie"),
         content: const Text("Czy na pewno chcesz się wylogować?"),
         actions: [
@@ -476,7 +494,6 @@ class _SchedulePageState extends State<SchedulePage> {
 
   @override
   void dispose() {
-    _timer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -489,22 +506,30 @@ class _SchedulePageState extends State<SchedulePage> {
 
   Future<Map<String, List<ClassItem>>> _fetchAndGroupSchedule() async {
     List<ClassItem> rawList = await ScheduleService.fetchSchedule(widget.user, widget.pass, _currentGroupId, _selectedPeriod);
+    
+    // Sort list by time to ensure correct order (good practice anyway)
+    rawList.sort((a, b) {
+      final startA = a.getStartDateTime() ?? DateTime(0);
+      final startB = b.getStartDateTime() ?? DateTime(0);
+      return startA.compareTo(startB);
+    });
+
     Map<String, List<ClassItem>> grouped = {};
     for (var item in rawList) {
       if (!grouped.containsKey(item.date)) grouped[item.date] = [];
       grouped[item.date]!.add(item);
     }
+
     _groupedClasses = grouped;
-    _sortedDates = grouped.keys.toList()..sort();
     
-    String todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    // Calculate initial page based on today vs kFirstDay
+    final now = DateTime.now();
+    final today = DateTime.utc(now.year, now.month, now.day);
     int initialPage = 0;
-    for (int i = 0; i < _sortedDates.length; i++) {
-      if (_sortedDates[i].compareTo(todayStr) >= 0) {
-        initialPage = i;
-        break;
-      }
+    if (!today.isBefore(kFirstDay) && !today.isAfter(kLastDay)) {
+      initialPage = today.difference(kFirstDay).inDays;
     }
+
     if (_pageController != null) _pageController!.dispose();
     _pageController = PageController(initialPage: initialPage, viewportFraction: 1.0);
     
@@ -518,7 +543,33 @@ class _SchedulePageState extends State<SchedulePage> {
   void _showGroupSettings() {
     TextEditingController tempController = TextEditingController(text: _currentGroupId);
     showDialog(context: context, builder: (context) {
-        return AlertDialog(backgroundColor: const Color(0xFF1E1E1E), title: const Text("Ustawienia Grupy"), content: Column(mainAxisSize: MainAxisSize.min, children: [const Text("Wpisz ID swojej grupy lub wklej link:", style: TextStyle(color: Colors.white70, fontSize: 13)), const SizedBox(height: 10), TextField(controller: tempController, decoration: const InputDecoration(labelText: "ID Grupy", border: OutlineInputBorder(), prefixIcon: Icon(Icons.group)))]), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Anuluj")), ElevatedButton(onPressed: () async { String newId = ScheduleService.extractGroupId(tempController.text); if (newId.isNotEmpty) { await _storage.write(key: 'group_id', value: newId); setState(() { _currentGroupId = newId; }); Navigator.pop(context); _refresh(); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Zmieniono grupę na: $newId"))); } }, style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor), child: const Text("Zapisz", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)))]);
+        return AlertDialog(
+          backgroundColor: Theme.of(context).cardColor, 
+          title: const Text("Ustawienia Grupy"), 
+          content: Column(
+            mainAxisSize: MainAxisSize.min, 
+            children: [
+              const Text("Wpisz ID swojej grupy lub wklej link:", style: TextStyle(fontSize: 13)), 
+              const SizedBox(height: 10), 
+              TextField(controller: tempController, decoration: const InputDecoration(labelText: "ID Grupy", border: OutlineInputBorder(), prefixIcon: Icon(Icons.group))),
+            ]
+          ), 
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Anuluj")), 
+            ElevatedButton(
+              onPressed: () async { 
+                String newId = ScheduleService.extractGroupId(tempController.text); 
+                if (newId.isNotEmpty) { 
+                  await _storage.write(key: 'group_id', value: newId); 
+                  setState(() { _currentGroupId = newId; }); 
+                  Navigator.pop(context); 
+                  _refresh(); 
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Zmieniono grupę na: $newId"))); 
+                } 
+              }, 
+              style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).primaryColor), 
+              child: Text("Zapisz", style: TextStyle(color: Theme.of(context).colorScheme.onPrimary, fontWeight: FontWeight.bold)))
+          ]);
       }
     );
   }
@@ -538,9 +589,9 @@ class _SchedulePageState extends State<SchedulePage> {
                 width: 50, 
                 child: Text("$hour:00",
                     textAlign: TextAlign.right,
-                    style: const TextStyle(color: Colors.white38, fontSize: 11))), 
+                    style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.5), fontSize: 11))), 
             const SizedBox(width: 8),
-            Expanded(child: Container(height: 1, color: Colors.white10))
+            Expanded(child: Container(height: 1, color: Theme.of(context).dividerColor.withOpacity(0.1)))
           ]));
     }));
 
@@ -578,7 +629,7 @@ class _SchedulePageState extends State<SchedulePage> {
         if (start == null || end == null) continue;
 
         double startMinutesFromTop = (start.hour - startHour) * 60.0 + start.minute;
-        double topOffset = (startMinutesFromTop / 60.0) * hourHeight;
+        double topOffset = (startMinutesFromTop / 60.0) * hourHeight + 8.0;
         double itemHeight = (end.difference(start).inMinutes.toDouble() / 60.0) * hourHeight;
 
         int status = item.checkTimeStatus();
@@ -589,8 +640,9 @@ class _SchedulePageState extends State<SchedulePage> {
         String startTime = timeParts[0];
         String endTime = timeParts.length > 1 ? timeParts[1] : "";
         
-        double leftPos = 60.0 + (i * ((MediaQuery.of(context).size.width - 70) / count));
-        double width = (MediaQuery.of(context).size.width - 70) / count;
+        double availableWidth = MediaQuery.of(context).size.width - 80; // Zwiększony margines, żeby nie wychodziło
+        double leftPos = 60.0 + (i * (availableWidth / count));
+        double width = availableWidth / count;
 
         stackChildren.add(Positioned(
           top: topOffset,
@@ -604,7 +656,7 @@ class _SchedulePageState extends State<SchedulePage> {
               child: Container(
                 margin: const EdgeInsets.only(right: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2C2C2C),
+                  color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(6),
                   border: isNow
                       ? Border.all(color: Theme.of(context).primaryColor, width: 2)
@@ -614,33 +666,45 @@ class _SchedulePageState extends State<SchedulePage> {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     double h = constraints.maxHeight;
-                    bool isShort = h < 55; 
-                    bool isTiny = h < 30;
+                    // Przy zwiększonej wysokości (90.0) 45 min to ok. 67.5px.
+                    // Dla pewności uznajemy za "krótkie" zajęcia trwające <= 45 min.
+                    // Obliczamy czas trwania w minutach:
+                    int durationInMinutes = end.difference(start).inMinutes;
+                    bool isShortClass = durationInMinutes <= 45;
+
+                    bool isTiny = h < 40;
                     bool isNarrow = count > 1;
                     
-                    // Sprawdzamy czy jest notatka, żeby dostosować paddingi
-                    bool hasNote = item.note != null && item.note!.isNotEmpty && !isShort;
+                    // Sprawdzamy czy jest notatka
+                    bool hasNote = item.note != null && item.note!.isNotEmpty;
 
-                    return Padding(
-                      // Jeśli jest notatka, zmniejszamy padding góra/dół do 2px, żeby zyskać miejsce
-                      padding: EdgeInsets.fromLTRB(isNarrow ? 4 : 8, (isShort || hasNote) ? 2 : 5, isNarrow ? 4 : 8, (isShort || hasNote) ? 2 : 5),
+                    // Dla krótkich zajęć (<= 45 min) nie pokazujemy notatki ani prowadzącego (chyba że to jedyna informacja)
+                    // Zgodnie z życzeniem: "zajecia 44 minutowe maja miec tylko info o nazwie sali i przeniesieniu na datę"
+                    // WYJĄTEK: Jeśli zajęcia są PRZENIESIONE, pokazujemy to zawsze!
+                    bool showTeacher = !isShortClass && !isNarrow && !item.isRescheduled;
+                    bool showNote = (!isShortClass && hasNote) || item.isRescheduled;
+                    bool showType = !isShortClass && !isTiny;
+
+                    Color bgColor = item.isRescheduled ? Colors.redAccent.withOpacity(0.2) : Colors.transparent;
+
+                    return Container(
+                      color: bgColor,
+                      padding: EdgeInsets.symmetric(horizontal: isNarrow ? 4 : 8, vertical: isTiny ? 2 : 6),
                       child: Row(
                         children: [
                           // KOLUMNA 1: CZAS
                           SizedBox(
-                            width: isNarrow ? 28 : 32, 
-                            child: isTiny 
-                            ? Center(child: FittedBox(fit: BoxFit.scaleDown, child: Text(startTime, style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold))))
-                            : Column(
+                            width: isNarrow ? 28 : 34,
+                            child: Column(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  FittedBox(fit: BoxFit.scaleDown, child: Text(startTime, style: TextStyle(fontSize: isShort ? 10 : 11, fontWeight: FontWeight.w600, color: Colors.white))),
-                                  FittedBox(fit: BoxFit.scaleDown, child: Text(endTime, style: TextStyle(fontSize: isShort ? 9 : 10, color: Colors.white54))),
+                                  FittedBox(fit: BoxFit.scaleDown, child: Text(startTime, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Theme.of(context).textTheme.bodyLarge?.color))),
+                                  FittedBox(fit: BoxFit.scaleDown, child: Text(endTime, style: TextStyle(fontSize: 11, color: Theme.of(context).textTheme.bodySmall?.color))),
                                 ],
                               ),
                           ),
                           
-                          Container(width: 1, color: Colors.white10, margin: EdgeInsets.symmetric(horizontal: isNarrow ? 3 : 6)),
+                          Container(width: 1, color: Theme.of(context).dividerColor.withOpacity(0.1), margin: EdgeInsets.symmetric(horizontal: isNarrow ? 4 : 8)),
 
                           // KOLUMNA 2: INFO
                           Expanded(
@@ -648,7 +712,7 @@ class _SchedulePageState extends State<SchedulePage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                // --- GÓRA: NAZWA + TYP + (GRUPA) ---
+                                // --- GÓRA: NAZWA + (NOTATKA) ---
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
@@ -657,56 +721,56 @@ class _SchedulePageState extends State<SchedulePage> {
                                       item.subject, 
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold, 
-                                        fontSize: isShort || isNarrow ? 10 : 12, 
-                                        height: 1.0 // Zmniejszona interlinia tytułu
+                                        fontSize: isNarrow ? 11 : 13,
+                                        height: 1.1
                                       ), 
-                                      maxLines: isShort ? 1 : 2, 
+                                      maxLines: showNote ? 2 : (isShortClass ? 2 : 3),
                                       overflow: TextOverflow.ellipsis
                                     ),
                                     
-                                    // NOTATKA (GRUPA)
-                                    if (hasNote)
+                                    // NOTATKA (tylko dla długich LUB przeniesionych)
+                                    if (showNote && item.note != null)
                                       Padding(
-                                        padding: const EdgeInsets.only(top: 1.0, bottom: 1.0),
+                                        padding: const EdgeInsets.only(top: 2.0),
                                         child: Text(
                                           item.note!, 
-                                          style: const TextStyle(fontSize: 9, color: Colors.orangeAccent, fontWeight: FontWeight.bold), 
-                                          maxLines: 1, 
+                                          style: TextStyle(
+                                            fontSize: item.isRescheduled ? 12 : 10,
+                                            color: item.isRescheduled ? Colors.redAccent : Colors.orangeAccent,
+                                            fontWeight: FontWeight.bold
+                                          ),
+                                          maxLines: item.isRescheduled ? 2 : 1,
                                           overflow: TextOverflow.ellipsis
                                         ),
                                       ),
-                                    
-                                    // Odstęp (mniejszy jeśli jest notatka)
-                                    SizedBox(height: (isShort || hasNote) ? 1 : 3), 
 
-                                    // TYP ZAJĘĆ
-                                    if (!isTiny) 
-                                      Text(
-                                        item.type, 
-                                        style: TextStyle(
-                                          // Jeśli jest notatka, zmniejsz czcionkę typu do 9
-                                          fontSize: (isShort || isNarrow || hasNote) ? 9 : 10, 
-                                          color: Colors.white54, 
-                                          height: 1.0
-                                        ), 
-                                        maxLines: 1, 
-                                        overflow: TextOverflow.ellipsis
+                                    // TYP ZAJĘĆ (tylko dla długich)
+                                    if (showType)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2.0),
+                                        child: Text(
+                                          item.type,
+                                          style: TextStyle(fontSize: 10, color: Theme.of(context).textTheme.bodySmall?.color),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis
+                                        ),
                                       ),
                                   ],
                                 ),
 
-                                // --- ŚRODEK: PROWADZĄCY ---
-                                if (!isShort && !isNarrow) 
+                                // --- ŚRODEK: PROWADZĄCY (tylko dla długich) ---
+                                if (showTeacher)
                                   Expanded(
-                                    child: Center( // Center + Align lewo lepiej centruje w pionie bez ucinania
+                                    child: Align(
+                                      alignment: Alignment.centerLeft,
                                       child: Row(
                                         children: [
-                                          const Icon(Icons.person, size: 12, color: Colors.white30),
+                                          Icon(Icons.person, size: 13, color: Theme.of(context).iconTheme.color?.withOpacity(0.5)),
                                           const SizedBox(width: 4),
                                           Expanded(
                                             child: Text(
                                               item.teacher, 
-                                              style: const TextStyle(fontSize: 10, color: Colors.white38),
+                                              style: TextStyle(fontSize: 11, color: Theme.of(context).textTheme.bodySmall?.color),
                                               maxLines: 1, 
                                               overflow: TextOverflow.ellipsis
                                             ),
@@ -716,17 +780,17 @@ class _SchedulePageState extends State<SchedulePage> {
                                     ),
                                   ),
 
-                                // --- DÓŁ: SALA ---
+                                // --- DÓŁ: SALA (zawsze) ---
                                 Row(
                                   children: [
-                                    Icon(Icons.location_on, size: isShort ? 10 : 11, color: _getColorForType(item.type)),
+                                    Icon(Icons.location_on, size: 12, color: _getColorForType(item.type)),
                                     const SizedBox(width: 4),
                                     Expanded(
                                       child: Text(
                                         item.room, 
                                         style: TextStyle(
-                                          fontSize: isShort || isNarrow ? 9 : 11, 
-                                          color: Colors.white, 
+                                          fontSize: 11,
+                                          color: Theme.of(context).textTheme.bodyLarge?.color, 
                                           fontWeight: FontWeight.w500
                                         ), 
                                         maxLines: 1, 
@@ -751,8 +815,13 @@ class _SchedulePageState extends State<SchedulePage> {
     }
 
     if (isToday) {
-      final timeLine = _buildCurrentTimeLine();
-      if (timeLine != null) stackChildren.add(timeLine);
+      stackChildren.add(Positioned.fill(
+        child: CurrentTimeLineWidget(
+          startHour: startHour,
+          endHour: endHour,
+          hourHeight: hourHeight,
+        ),
+      ));
     }
 
     return SingleChildScrollView(
@@ -766,22 +835,151 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
-  Widget? _buildCurrentTimeLine() {
-    final now = DateTime.now();
-    if (now.hour < startHour || now.hour > endHour) return null;
-    double minutesFromTop = (now.hour - startHour) * 60.0 + now.minute;
-    double topOffset = (minutesFromTop / 60.0) * hourHeight;
-    return Positioned(top: topOffset, left: 0, right: 0, child: Row(children: [Container(width: 50, alignment: Alignment.centerRight, child: Text(DateFormat('HH:mm').format(now), style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12))), const SizedBox(width: 5), const Icon(Icons.circle, color: Colors.redAccent, size: 8), Expanded(child: Container(height: 2, color: Colors.redAccent))]));
+  Widget _buildSimpleList(List<ClassItem> classes) {
+    if (classes.isEmpty) return _buildEmptyDayMessage();
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: classes.length,
+      itemBuilder: (context, index) {
+        final item = classes[index];
+        bool isRemote = item.room.toLowerCase().contains('zdalne') || item.type.toLowerCase().contains('zdalne');
+        Color typeColor = item.isRescheduled ? Colors.redAccent : (isRemote ? Provider.of<ThemeProvider>(context).remoteColor : _getColorForType(item.type));
+        
+        Color bgColor;
+        if (item.isRescheduled) {
+          // Adaptive background for rescheduled items (Dark Brown in Dark Mode, Light Red in Light Mode)
+          bool isDark = Theme.of(context).brightness == Brightness.dark;
+          bgColor = isDark ? const Color(0xFF3E2723).withOpacity(0.8) : Colors.red.withOpacity(0.1);
+        } else if (isRemote) {
+          bgColor = Provider.of<ThemeProvider>(context).remoteColor.withOpacity(0.1);
+        } else {
+          bgColor = Theme.of(context).cardColor;
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border(left: BorderSide(color: typeColor, width: 6)),
+            boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4, offset: const Offset(0, 2))],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _showClassDetails(item),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Czas
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                         Text(item.time.split('-')[0].trim(), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).textTheme.bodyLarge?.color)),
+                         const SizedBox(height: 4),
+                         Text(item.time.split('-')[1].trim(), style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 14)),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    Container(width: 1, height: 60, color: Theme.of(context).dividerColor.withOpacity(0.1)),
+                    const SizedBox(width: 16),
+                    // Reszta info
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item.subject, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).textTheme.bodyLarge?.color)),
+
+                          // Notatka (dla wszystkich)
+                          if (item.note != null && item.note!.isNotEmpty) ...[
+                             const SizedBox(height: 4),
+                             Text(
+                               item.isRescheduled ? "PRZENIESIONE: ${item.note}" : item.note!,
+                               style: TextStyle(color: item.isRescheduled ? Colors.redAccent : Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 13)
+                             ),
+                          ],
+
+                          const SizedBox(height: 6),
+
+                          // Prowadzący
+                          Row(
+                            children: [
+                              Icon(Icons.person, size: 14, color: Theme.of(context).iconTheme.color?.withOpacity(0.5)),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text(item.teacher, style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7), fontSize: 13), overflow: TextOverflow.visible)),
+                            ],
+                          ),
+
+                          const SizedBox(height: 6),
+
+                          // Sala i Typ
+                          Row(
+                            children: [
+                              Icon(Icons.location_on, size: 14, color: typeColor),
+                              const SizedBox(width: 6),
+                              Flexible(child: Text(item.room, style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color, fontSize: 13), overflow: TextOverflow.visible)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(Icons.class_, size: 14, color: Theme.of(context).iconTheme.color?.withOpacity(0.5)),
+                              const SizedBox(width: 6),
+                              Flexible(child: Text(item.type, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 13), overflow: TextOverflow.visible)),
+                              if (isRemote) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(color: Provider.of<ThemeProvider>(context).remoteColor, borderRadius: BorderRadius.circular(4)),
+                                  child: Text("ZDALNE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onPrimary)),
+                                )
+                              ]
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyDayMessage() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.weekend, size: 80, color: Theme.of(context).disabledColor.withOpacity(0.3)),
+          const SizedBox(height: 20),
+          Text("Nie ma dzisiaj zajęć", style: TextStyle(fontSize: 20, color: Theme.of(context).textTheme.bodyLarge?.color?.withOpacity(0.5), fontWeight: FontWeight.bold)),
+          Text("Odpocznij!", style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color?.withOpacity(0.5))),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: Icon(_isSimpleView ? Icons.view_timeline : Icons.view_list),
+          onPressed: _toggleView,
+          tooltip: "Zmień widok",
+        ),
         title: const Text("Schedule", style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         actions: [
-          IconButton(icon: Icon(_showCalendar ? Icons.view_agenda : Icons.calendar_month), onPressed: () => setState(() => _showCalendar = !_showCalendar)),
+          IconButton(icon: Icon(_showCalendar ? Icons.close : Icons.calendar_month), onPressed: () => setState(() => _showCalendar = !_showCalendar)),
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'refresh') _refresh();
@@ -790,7 +988,18 @@ class _SchedulePageState extends State<SchedulePage> {
             },
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
               const PopupMenuItem<String>(value: 'refresh', child: ListTile(leading: Icon(Icons.refresh), title: Text('Odśwież'))),
-              const PopupMenuItem<String>(value: 'group', child: ListTile(leading: Icon(Icons.settings), title: Text('Zmień Grupę'))),
+              const PopupMenuItem<String>(value: 'group', child: ListTile(leading: Icon(Icons.group), title: Text('Zmień Grupę'))),
+              PopupMenuItem<String>(
+                value: 'settings', 
+                child: ListTile(
+                  leading: const Icon(Icons.palette), 
+                  title: const Text('Personalizacja'),
+                  onTap: () {
+                     Navigator.pop(context); // Close popup
+                     Navigator.push(context, MaterialPageRoute(builder: (context) => const ThemeSettingsPage()));
+                  },
+                )
+              ),
               const PopupMenuDivider(),
               const PopupMenuItem<String>(value: 'logout', child: ListTile(leading: Icon(Icons.logout, color: Colors.redAccent), title: Text('Wyloguj', style: TextStyle(color: Colors.redAccent)))),
             ],
@@ -800,7 +1009,7 @@ class _SchedulePageState extends State<SchedulePage> {
       floatingActionButton: FloatingActionButton(
         onPressed: _jumpToToday,
         backgroundColor: Theme.of(context).primaryColor,
-        child: const Icon(Icons.today, color: Colors.black),
+        child: Icon(Icons.today, color: Theme.of(context).colorScheme.onPrimary),
       ),
       body: FutureBuilder<Map<String, List<ClassItem>>>(
         future: _scheduleFuture,
@@ -813,20 +1022,31 @@ class _SchedulePageState extends State<SchedulePage> {
             children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300), height: _showCalendar ? 380 : 0,
-                child: SingleChildScrollView(child: TableCalendar(locale: 'pl_PL', firstDay: DateTime.utc(2023, 10, 1), lastDay: DateTime.utc(2026, 12, 31), focusedDay: _focusedDay, selectedDayPredicate: (day) => isSameDay(_selectedDay, day), eventLoader: _getEventsForDay, onDaySelected: (selectedDay, focusedDay) { setState(() { _selectedDay = selectedDay; _focusedDay = focusedDay; _showCalendar = false; }); String dateKey = DateFormat('yyyy-MM-dd').format(selectedDay); int index = _sortedDates.indexOf(dateKey); if (index != -1 && _pageController != null) _pageController!.jumpToPage(index); else ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Brak zajęć w tym dniu."))); }, calendarStyle: const CalendarStyle(markerDecoration: BoxDecoration(color: Color(0xFFBB86FC), shape: BoxShape.circle), selectedDecoration: BoxDecoration(color: Color(0xFF03DAC6), shape: BoxShape.circle), todayDecoration: BoxDecoration(color: Colors.white24, shape: BoxShape.circle)), headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true))),
+                child: SingleChildScrollView(child: TableCalendar(locale: 'pl_PL', firstDay: kFirstDay, lastDay: kLastDay, focusedDay: _focusedDay, selectedDayPredicate: (day) => isSameDay(_selectedDay, day), eventLoader: _getEventsForDay, onDaySelected: (selectedDay, focusedDay) { setState(() { _selectedDay = selectedDay; _focusedDay = focusedDay; _showCalendar = false; }); int index = selectedDay.difference(kFirstDay).inDays; if (index >= 0 && _pageController != null) { _pageController!.jumpToPage(index); } }, calendarStyle: CalendarStyle(markerDecoration: BoxDecoration(color: Theme.of(context).primaryColor, shape: BoxShape.circle), selectedDecoration: BoxDecoration(color: Theme.of(context).colorScheme.secondary, shape: BoxShape.circle), todayDecoration: BoxDecoration(color: Theme.of(context).disabledColor.withOpacity(0.3), shape: BoxShape.circle)), headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true))),
               ),
               Expanded(
                 child: PageView.builder(
                   controller: _pageController,
-                  itemCount: _sortedDates.length,
+                  itemCount: kLastDay.difference(kFirstDay).inDays + 1,
                   itemBuilder: (context, index) {
-                    String dateKey = _sortedDates[index];
-                    DateTime dt = DateTime.parse(dateKey);
+                    DateTime dt = kFirstDay.add(Duration(days: index));
+                    String dateKey = DateFormat('yyyy-MM-dd').format(dt);
                     String dayName = toBeginningOfSentenceCase(DateFormat('EEEE', 'pl_PL').format(dt))!;
                     String fullDate = DateFormat('d MMMM', 'pl_PL').format(dt);
                     bool isToday = DateFormat('yyyy-MM-dd').format(DateTime.now()) == dateKey;
 
-                    return Column(children: [Container(padding: const EdgeInsets.symmetric(vertical: 16), decoration: BoxDecoration(color: isToday ? Theme.of(context).primaryColor.withOpacity(0.1) : Colors.transparent, border: Border(bottom: BorderSide(color: Colors.white10))), child: Center(child: Column(children: [Text(dayName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isToday ? Theme.of(context).primaryColor : Colors.white)), Text(fullDate, style: const TextStyle(color: Colors.white70))]))), Expanded(child: _buildDayTimeline(_groupedClasses[dateKey]!, isToday))]);
+                    List<ClassItem> classes = _groupedClasses[dateKey] ?? [];
+                    Widget content;
+
+                    if (classes.isEmpty) {
+                      content = _buildEmptyDayMessage();
+                    } else if (_isSimpleView) {
+                      content = _buildSimpleList(classes);
+                    } else {
+                      content = _buildDayTimeline(classes, isToday);
+                    }
+
+                    return Column(children: [Container(padding: const EdgeInsets.symmetric(vertical: 16), decoration: BoxDecoration(color: isToday ? Theme.of(context).primaryColor.withOpacity(0.1) : Colors.transparent, border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.1)))), child: Center(child: Column(children: [Text(dayName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isToday ? Theme.of(context).primaryColor : Theme.of(context).textTheme.headlineSmall?.color)), Text(fullDate, style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7)))]))), Expanded(child: content)]);
                   },
                 ),
               ),
@@ -838,10 +1058,81 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Color _getColorForType(String type) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
     type = type.toLowerCase();
-    if (type.contains('wykład')) return const Color(0xFF03DAC6);
-    if (type.contains('ćwiczenia')) return Colors.orangeAccent;
-    if (type.contains('lab')) return Colors.blueAccent;
+    if (type.contains('wykład')) return themeProvider.lectureColor;
+    if (type.contains('ćwiczenia')) return themeProvider.exerciseColor;
+    if (type.contains('lab')) return themeProvider.labColor;
     return Colors.grey;
+  }
+}
+
+class CurrentTimeLineWidget extends StatefulWidget {
+  final int startHour;
+  final int endHour;
+  final double hourHeight;
+
+  const CurrentTimeLineWidget({
+    super.key,
+    required this.startHour,
+    required this.endHour,
+    required this.hourHeight,
+  });
+
+  @override
+  State<CurrentTimeLineWidget> createState() => _CurrentTimeLineWidgetState();
+}
+
+class _CurrentTimeLineWidgetState extends State<CurrentTimeLineWidget> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    if (now.hour < widget.startHour || now.hour > widget.endHour) {
+      return const SizedBox.shrink();
+    }
+
+    double minutesFromTop = (now.hour - widget.startHour) * 60.0 + now.minute;
+    double topOffset = (minutesFromTop / 60.0) * widget.hourHeight;
+
+    return Stack(
+      children: [
+        Positioned(
+          top: topOffset,
+          left: 0,
+          right: 0,
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                alignment: Alignment.centerRight,
+                child: Text(
+                  DateFormat('HH:mm').format(now),
+                  style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+              const SizedBox(width: 5),
+              const Icon(Icons.circle, color: Colors.redAccent, size: 8),
+              Expanded(child: Container(height: 2, color: Colors.redAccent)),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
